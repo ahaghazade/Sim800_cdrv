@@ -33,8 +33,9 @@ const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
 static sim800_res_t fLoadPhoneNumbers(JsonDocument *JsonDoc, String path);
 static sim800_res_t fSavePhoneNumbers(JsonDocument *JsonDoc, String path);
 static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalized);
-static sim800_res_t fReadInbox();
-static sim800_res_t fClearInbox();
+static sim800_res_t fGSM_Init(sSim800 * const me);
+static sim800_res_t fInbox_Read();
+static sim800_res_t fInbox_Clear();
 
 /* Variables -----------------------------------------------------------------*/
 
@@ -64,8 +65,13 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
     return SIM800_RES_INIT_FAIL;
   }
 
+  if(fGSM_Init(me) != SIM800_RES_OK) {
+    return SIM800_RES_INIT_FAIL;
+  }
+
   me->EnableSengingSMS = true;
   me->Init = true;
+  me->IsSending = false;
 
   return SIM800_RES_OK;
 }
@@ -138,11 +144,13 @@ sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber) {
  * @param PhoneNumber 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me, String PhoneNumber) {
+sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
 
   if(me == NULL || !me->Init) {
     return SIM800_RES_INIT_FAIL;
   }
+
+  me->SavedPhoneNumbers.clear();
 
   return SIM800_RES_OK;
 }
@@ -153,10 +161,31 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me, String PhoneNumbe
  * @param me 
  * @param PhoneNumber 
  * @param Text 
- * @param DeliveryCheck 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text, bool DeliveryCheck) {
+sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text) {
+
+  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  String NormalizedPhoneNum;
+  if(fNormalizedPhoneNumber(PhoneNumber, &NormalizedPhoneNum) != SIM800_RES_OK) {
+    return SIM800_RES_PHONENUMBER_INVALID;
+  }
+
+  String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
+  if(fSim800_SendCommand(me, TargetPhoneNumber, SEND_SMS_START)) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
+  me->ComPort->print(Text);
+  me->ComPort->write(SEND_SMS_END);
+
+  delay(10);
+
+  if(fSim800_SendCommand(me, AT, ATOK)) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
 
 	return SIM800_RES_OK;
 }
@@ -171,8 +200,61 @@ sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text
  */
 sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String DesiredResponse) {
 
+  me->IsSending = true;
+  bool commandResponsed = false;
+  int commandTries = 0;
 
-	return SIM800_RES_OK;
+  while(!commandResponsed && commandTries < me->CommandSendRetries) {
+    
+    commandTries++;
+    
+    Serial.printf("\nSending %s  ...(%d) -- desired response: %s\n", Command.c_str(), commandTries, DesiredResponse);
+
+    me->ComPort->println(Command);
+    unsigned long startTime = millis();
+
+    while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+
+      while(me->ComPort->available() > 0) {  
+
+        String line = me->ComPort->readString();
+
+        Serial.println("==== readed data =====");  
+        Serial.println(line);
+        Serial.print("line.indexOf(DesiredRes): ");
+        Serial.println(line.indexOf(DesiredResponse));
+
+        if (line.indexOf(DesiredResponse) != -1) {
+
+          Serial.printf("Request %s : Success.\n", Command.c_str());
+          commandResponsed = true;
+          break;
+        }
+      }
+    }
+    delay(10);
+  }
+
+  me->IsSending = false;
+
+  if(commandResponsed == true) {
+    return SIM800_RES_OK;
+  } else {
+	return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+}
+
+/**
+ * @brief 
+ * 
+ * @param me 
+ * @param pBalance 
+ * @return sim800_res_t 
+ */
+sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance) {
+
+
+  return SIM800_RES_OK;
 }
 
 
@@ -234,6 +316,47 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
     *Normalized = "0" + PhoneNumber.substring(3);
   } else {
     return SIM800_RES_PHONENUMBER_INVALID;
+  }
+
+  return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fGSM_Init(sSim800 * const me) {
+
+  if(fSim800_SendCommand(me, AT, ATOK) != SIM800_RES_OK) {
+    // RestartGSM();
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
+    return SIM800_RES_SIMCARD_NOT_INSERTED;
+  }
+  if(fSim800_SendCommand(me,RESET_FACTORY, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,IRANCELL, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSim800_SendCommand(me,SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(me->EnableDeliveryReport) {
+    if(fSim800_SendCommand(me, DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+      return SIM800_RES_SEND_SMS_FAIL;
+    }
   }
 
   return SIM800_RES_OK;
