@@ -76,12 +76,52 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
   return SIM800_RES_OK;
 }
 
+/**
+ * @brief 
+ * 
+ * @param me 
+ */
 void fSim800_Run(sSim800 * const me) {
 
-  if (me == NULL || !me->Init) {
-    return;
-  }
+  if (!me || !me->Init) return;
 
+  // Send AT+CMGL manually
+  me->ComPort->println("AT+CMGL=\"REC UNREAD\"");
+
+  unsigned long startTime = millis();
+  while (millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+    
+    while (me->ComPort->available() > 0) {
+
+      String line = me->ComPort->readStringUntil('\n');
+      line.trim();
+
+      // Ignore empty lines
+      if (line.length() == 0) continue;
+
+      // Ignore unsolicited +CMTI messages
+      if (line.startsWith("+CMTI:")) continue;
+
+      // Process SMS header
+      if (line.startsWith("+CMGL:")) {
+
+        Serial.println("New Unreaded msg");
+        int indexStart = line.indexOf(":") + 1;
+        int indexEnd = line.indexOf(",");
+        int smsIndex = line.substring(indexStart, indexEnd).toInt();
+
+        // Next line is the message body
+        String message = me->ComPort->readStringUntil('\n');
+        message.trim();
+
+        Serial.printf("SMS (index %d): %s\n", smsIndex, message.c_str());
+
+        // Delete after reading
+        String deleteCmd = "AT+CMGD=" + String(smsIndex) + ",0";
+        fSim800_SendCommand(me, deleteCmd, "OK");
+      }
+    }
+  }
 }
 
 /**
@@ -178,6 +218,7 @@ sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
+  me->IsSending = true;
   me->ComPort->print(Text);
   me->ComPort->write(SEND_SMS_END);
 
@@ -232,7 +273,6 @@ sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String Desi
         }
       }
     }
-    delay(10);
   }
 
   me->IsSending = false;

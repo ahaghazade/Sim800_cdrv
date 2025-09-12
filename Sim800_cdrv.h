@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /* Exported defines ----------------------------------------------------------*/
-#define WAIT_FOR_COMMAND_RESPONSE_MS            10000
+#define WAIT_FOR_COMMAND_RESPONSE_MS            3000
 
 /**
  * @brief Return codes for sim800 operations
@@ -53,8 +53,6 @@ typedef uint8_t sim800_res_t;
 #define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)8)
 
 /* Exported macro ------------------------------------------------------------*/
-#define DELETE_MSG_AT_INDEX(idx)  "AT+CMGD=" #idx ",0"
-
 /* Exported types ------------------------------------------------------------*/
 /**
  * @brief sim800 configuration structure

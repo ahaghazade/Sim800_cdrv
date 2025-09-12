@@ -12,6 +12,7 @@
 #define DELIVERY_ENABLE           "AT+CNMI=2,1,0,1,0"
 #define SEND_SMS_END              (char)26
 #define SEND_SMS_START            ">"
+#define CHECK_UNREAD_MSG          "AT+CMGL=\"REC UNREAD\""
 #define SET_UCS2_MODE1            "AT+CSCS=\"UCS2\""
 #define SET_UCS2_MODE2            "AT+CSMP=49,167,0,0"
 #define SMS_RECEIVE               "AT+CNMI=2,1,0,1,0"
