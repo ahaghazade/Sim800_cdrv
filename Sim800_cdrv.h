@@ -51,6 +51,7 @@ typedef uint8_t sim800_res_t;
 #define SIM800_RES_PHONENUMBER_INVALID          ((uint8_t)6)
 #define SIM800_RES_PHONENUMBER_NOT_FOUND        ((uint8_t)7)
 #define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)8)
+#define SIM800_RES_REVIEVED_SMS_INVALID         ((uint8_t)9)
 
 /* Exported macro ------------------------------------------------------------*/
 /* Exported types ------------------------------------------------------------*/

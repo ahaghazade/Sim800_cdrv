@@ -4,7 +4,7 @@
 #define ECHO_DIABLE               "ATE0"
 #define SET_TEXT_MODE             "AT+CMGF=1"
 #define IRANCELL                  "AT+CSMP=49,167,0,0"
-#define SET_TEXT_MODE_CONFIG      "AT+CSMP=49,167,0,0"
+#define SET_TEXT_MODE_CONFIG      "AT+CSMP=17,167,0,0"
 #define CHECK_SIMCARD_INSERTED    "AT+CPIN?"
 #define SIMCARD_INSERTED          "+CPIN: READY"
 #define SET_PHONE_NUM             "AT+CMGS=\""

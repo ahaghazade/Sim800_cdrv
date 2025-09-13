@@ -26,16 +26,30 @@
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 /* Private typedef -----------------------------------------------------------*/
+typedef struct{
+  
+  int index;
+  
+  String phoneNumber;
+  
+  String dateTime;
+
+  String Massage;
+
+}sSmsData;
+
 /* Private variables ---------------------------------------------------------*/
 const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
 
 /* Private function prototypes -----------------------------------------------*/
-static sim800_res_t fLoadPhoneNumbers(JsonDocument *JsonDoc, String path);
-static sim800_res_t fSavePhoneNumbers(JsonDocument *JsonDoc, String path);
+static sim800_res_t fLoadPhoneNumbers(sSim800 * const me, String Path);
+static sim800_res_t fSavePhoneNumbers(sSim800 * const me, String Path);
 static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalized);
 static sim800_res_t fGSM_Init(sSim800 * const me);
 static sim800_res_t fInbox_Read();
 static sim800_res_t fInbox_Clear();
+static sim800_res_t fRecivedSms_Parse(const String *pLine, sSmsData *pRecSms);
+static sim800_res_t fRecivedSms_CheckCommand(sSim800 * const me, sSmsData pRecSms);
 
 /* Variables -----------------------------------------------------------------*/
 
@@ -61,7 +75,7 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
     return SIM800_RES_INIT_FAIL;
   }
 
-  if(fLoadPhoneNumbers(&me->SavedPhoneNumbers, SavedPhoneNumbersPath) != SIM800_RES_OK) {
+  if(fLoadPhoneNumbers(me, SavedPhoneNumbersPath) != SIM800_RES_OK) {
     return SIM800_RES_INIT_FAIL;
   }
 
@@ -96,7 +110,7 @@ void fSim800_Run(sSim800 * const me) {
       String line = me->ComPort->readStringUntil('\n');
       line.trim();
 
-      // Ignore empty lines
+      // Ignore empty pLine->
       if (line.length() == 0) continue;
 
       // Ignore unsolicited +CMTI messages
@@ -104,21 +118,31 @@ void fSim800_Run(sSim800 * const me) {
 
       // Process SMS header
       if (line.startsWith("+CMGL:")) {
-
+        // +CMGL: 1,"REC UNREAD","+989123456789","","25/09/12,21:32:15+14"
         Serial.println("New Unreaded msg");
-        int indexStart = line.indexOf(":") + 1;
-        int indexEnd = line.indexOf(",");
-        int smsIndex = line.substring(indexStart, indexEnd).toInt();
+        Serial.println(line);
 
-        // Next line is the message body
+        sSmsData pRecSms;
+        
+        if(fRecivedSms_Parse(&line, &pRecSms) != SIM800_RES_OK) {
+          return;
+        }
+
+        // Next pLine->is the message body
         String message = me->ComPort->readStringUntil('\n');
         message.trim();
 
-        Serial.printf("SMS (index %d): %s\n", smsIndex, message.c_str());
+        pRecSms.Massage = message;
+
+        Serial.printf("SMS (index %d) from %s : %s\n", pRecSms.index, pRecSms.phoneNumber , pRecSms.Massage.c_str());
 
         // Delete after reading
-        String deleteCmd = "AT+CMGD=" + String(smsIndex) + ",0";
+        String deleteCmd = "AT+CMGD=" + String(pRecSms.index) + ",0";
         fSim800_SendCommand(me, deleteCmd, "OK");
+
+        if(fRecivedSms_CheckCommand(me, pRecSms) != SIM800_RES_OK) {
+          return;
+        }
       }
     }
   }
@@ -144,7 +168,7 @@ sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool
   }
 
   me->SavedPhoneNumbers[NormalizedPhoneNumber] = IsAdmin? 1 : 0;
-  fSavePhoneNumbers(&me->SavedPhoneNumbers, SavedPhoneNumbersPath);
+  fSavePhoneNumbers(me, SavedPhoneNumbersPath);
 
   return SIM800_RES_OK;
 }
@@ -172,7 +196,7 @@ sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber) {
   }
 
   me->SavedPhoneNumbers.remove(NormalizedPhoneNumber);
-  fSavePhoneNumbers(&me->SavedPhoneNumbers, SavedPhoneNumbersPath);
+  fSavePhoneNumbers(me, SavedPhoneNumbersPath);
 
   return SIM800_RES_OK;
 }
@@ -262,7 +286,7 @@ sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String Desi
 
         Serial.println("==== readed data =====");  
         Serial.println(line);
-        Serial.print("line.indexOf(DesiredRes): ");
+        Serial.print("line indexOf(DesiredRes): ");
         Serial.println(line.indexOf(DesiredResponse));
 
         if (line.indexOf(DesiredResponse) != -1) {
@@ -305,18 +329,18 @@ sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance) {
 /**
  * @brief 
  * 
- * @param JsonDoc 
- * @param path 
+ * @param me 
+ * @param Path 
  * @return sim800_res_t 
  */
-static sim800_res_t fSavePhoneNumbers(JsonDocument *JsonDoc, String path) {
+static sim800_res_t fSavePhoneNumbers(sSim800 * const me, String Path) {
 
-  File file = SPIFFS.open(path, FILE_WRITE);
+  File file = SPIFFS.open(Path, FILE_WRITE);
   if(!file) {
     return SIM800_RES_LOAD_JSON_FIAL;
   }
 
-  serializeJson(*JsonDoc, file);
+  serializeJson(me->SavedPhoneNumbers, file);
   file.close();
 
   return SIM800_RES_OK;
@@ -326,16 +350,16 @@ static sim800_res_t fSavePhoneNumbers(JsonDocument *JsonDoc, String path) {
  * @brief 
  * 
  * @param JsonDoc 
- * @param path 
+ * @param Path 
  * @return sim800_res_t 
  */
-static sim800_res_t fLoadPhoneNumbers(JsonDocument *JsonDoc, String path) {
+static sim800_res_t fLoadPhoneNumbers(sSim800 * const me, String Path) {
 
-  File file = SPIFFS.open(path, FILE_READ);
+  File file = SPIFFS.open(Path, FILE_READ);
   if(!file) {
     return SIM800_RES_LOAD_JSON_FIAL;
   }
-  deserializeJson(*JsonDoc, file);
+  deserializeJson(me->SavedPhoneNumbers, file);
   file.close();
 
   return SIM800_RES_OK;
@@ -402,6 +426,116 @@ static sim800_res_t fGSM_Init(sSim800 * const me) {
   return SIM800_RES_OK;
 }
 
+static sim800_res_t fRecivedSms_Parse(const String *pLine, sSmsData *pRecSms) {
+
+  if (!pLine->startsWith("+CMGL:")) {
+    return SIM800_RES_REVIEVED_SMS_INVALID;
+  }
+
+  // Example: +CMGL: 1,"REC UNREAD","+989123456789","","25/09/12,21:32:15+14"
+  int firstComma = pLine->indexOf(',');
+  if (firstComma == -1) return SIM800_RES_REVIEVED_SMS_INVALID;
+
+  // Extract index
+  String idxStr = pLine->substring(6, firstComma);
+  pRecSms->index = idxStr.toInt();
+
+  // Extract phone number (inside 3rd quoted string)
+  int firstQuote = pLine->indexOf('"', firstComma + 1);   // "REC UNREAD"
+  int secondQuote = pLine->indexOf('"', firstQuote + 1);
+
+  int thirdQuote = pLine->indexOf('"', secondQuote + 1);  // phone number
+  int fourthQuote = pLine->indexOf('"', thirdQuote + 1);
+
+  if (thirdQuote == -1 || fourthQuote == -1) return SIM800_RES_REVIEVED_SMS_INVALID;
+  String phoneNumber = pLine->substring(thirdQuote + 1, fourthQuote);
+
+  if(fNormalizedPhoneNumber(phoneNumber, &pRecSms->phoneNumber) != SIM800_RES_OK) {
+    return SIM800_RES_PHONENUMBER_INVALID;
+  }
+
+  // Extract datetime (last quoted string)
+  int lastQuoteOpen = pLine->lastIndexOf('"');
+  int lastQuoteClose = pLine->lastIndexOf('"', lastQuoteOpen - 1);
+  if (lastQuoteOpen > lastQuoteClose) {
+    pRecSms->dateTime = pLine->substring(lastQuoteClose + 1, lastQuoteOpen);
+  }
+
+  return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param pRecSms 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fRecivedSms_CheckCommand(sSim800 * const me, sSmsData RecSms) {
+
+  if(me->SavedPhoneNumbers.containsKey(RecSms.phoneNumber)) {
+
+    Serial.println("Recived sms from admins, check command");
+
+    RecSms.Massage.toLowerCase();
+    bool commandIsValid = false;
+
+    if(RecSms.Massage.indexOf(SYSTEM) != -1) {
+
+      Serial.println("System Command received.");
+      // systemAct(RecSms.Massage);
+      commandIsValid = true;
+    
+    }else if(RecSms.Massage.indexOf(LAMP) != -1) {
+
+      Serial.println("Lamp Command received.");
+      // lampAct(RecSms.Massage);
+      commandIsValid = true;
+
+    }else if(RecSms.Massage.indexOf(SMSIP) != -1) {
+
+      Serial.println("IP Command received.");
+      // ipAct(RecSms.Massage);
+      commandIsValid = true;
+
+    }else if (RecSms.Massage.indexOf(ALARM) != -1) {
+
+      Serial.println("Alarm Command received.");
+      // alarmAct(RecSms.Massage);
+      commandIsValid = true;
+    }
+    else if (RecSms.Massage.indexOf(MONOXIDE)!=-1) {
+
+      Serial.println("Monixide Command received.");
+      // carbonSensorAct(RecSms.Massage);
+      commandIsValid = true;
+
+    }else if(RecSms.Massage.indexOf(FIRE)!=-1) {
+
+      Serial.println("Fire Command received.");
+      // fireAct(RecSms.Massage);
+      commandIsValid = true;
+
+    }else if(RecSms.Massage.indexOf(HUMIDITY)!=-1) {
+      
+      Serial.println("Humidity Command received.");
+      // HumiditySensorAct(RecSms.Massage);
+      commandIsValid = true;
+    } else if (RecSms.Massage.indexOf(TEMP)!=-1) {
+
+      Serial.println("Temp Command received.");
+      // tempSensorAct(RecSms.Massage);
+      commandIsValid = true;
+    }
+    
+    if(!commandIsValid) {
+      return SIM800_RES_REVIEVED_SMS_INVALID;
+    }
+  } else {
+    return SIM800_RES_PHONENUMBER_INVALID;
+  }
+
+  return SIM800_RES_OK;
+}
 
 /**End of Group_Name
   * @}
