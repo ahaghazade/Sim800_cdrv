@@ -22,6 +22,7 @@
 
 #include <SPIFFS.h>
 #include <Arduino.h>
+#include <vector>
 
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
@@ -88,56 +89,60 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
  * @param me 
  */
 void fSim800_Run(sSim800 * const me) {
-
-  if (!me || !me->Init) return;
+  if (me == NULL || !me->Init || me->IsSending) return;
 
   Serial.println("Checking inbox...");
-  // Send AT+CMGL manually
+
+  me->IsSending = true;
   me->ComPort->println("AT+CMGL=\"REC UNREAD\"");
 
   unsigned long startTime = millis();
-  while (millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
-    
-    while (me->ComPort->available() > 0) {
+  bool finished = false;
 
+  while (!finished && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+    while (me->ComPort->available() > 0) {
       String line = me->ComPort->readStringUntil('\n');
       line.trim();
-
-      // Ignore empty pLine->
       if (line.length() == 0) continue;
 
-      // Ignore unsolicited +CMTI messages
-      if (line.startsWith("+CMTI:")) continue;
-
-      // Process SMS header
-      if (line.startsWith("+CMGL:")) {
-        // +CMGL: 1,"REC UNREAD","+989123456789","","25/09/12,21:32:15+14"
-        Serial.println("New Unreaded msg");
-        Serial.println(line);
+      if (line == "OK") {
         
-        if(fRecivedSms_Parse(me, &line) != SIM800_RES_OK) {
+        finished = true; // no more messages
+        break;
+      }
+
+      if (line.startsWith("+CMGL:")) {
+        // Parse header
+        if (fRecivedSms_Parse(me, &line) != SIM800_RES_OK) {
+          me->IsSending = false;
           return;
         }
 
-        // Next pLine->is the message body
+        // Next line = SMS body
         String message = me->ComPort->readStringUntil('\n');
         message.trim();
-
         me->_args.MassageData.Massage = message;
 
-        Serial.printf("SMS (index %d) from %s : %s\n", me->_args.MassageData.index, me->_args.MassageData.phoneNumber , me->_args.MassageData.Massage.c_str());
+        Serial.printf("SMS (index %d) from %s : %s\n",
+          me->_args.MassageData.index,
+          me->_args.MassageData.phoneNumber,
+          me->_args.MassageData.Massage.c_str()
+        );
 
         // Delete after reading
         String deleteCmd = "AT+CMGD=" + String(me->_args.MassageData.index) + ",0";
         fSim800_SendCommand(me, deleteCmd, "OK");
 
-        if(fRecivedSms_CheckCommand(me) != SIM800_RES_OK) {
-          return;
-        }
+        // Process if needed
+        fRecivedSms_CheckCommand(me);
       }
     }
   }
+
+  me->IsSending = false;
 }
+
+
 
 /**
  * @brief 
@@ -220,9 +225,12 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
  */
 sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text) {
 
+  me->IsSending = true;
   if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
+
+  me->IsSending = true;
   String NormalizedPhoneNum;
   if(fNormalizedPhoneNumber(PhoneNumber, &NormalizedPhoneNum) != SIM800_RES_OK) {
     return SIM800_RES_PHONENUMBER_INVALID;
@@ -242,6 +250,8 @@ sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text
   if(fSim800_SendCommand(me, AT, ATOK)) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
+
+  me->IsSending = false;
 
 	return SIM800_RES_OK;
 }
