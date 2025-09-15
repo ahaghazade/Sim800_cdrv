@@ -145,7 +145,8 @@ void fSim800_Run(sSim800 * const me);
 sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool IsAdmin);
 sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber);
 sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me);
-sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text);
+sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String message);
+sim800_res_t fSim800_SMSSendToAll(sSim800 * const me, String message);
 sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String DesiredResponse);
 sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance);
 

@@ -106,7 +106,7 @@ void fSim800_Run(sSim800 * const me) {
   bool finished = false;
   String lastLine;
   bool expectMessageBody = false;
-  
+
   std::vector<int> messageIndices; // Store indices to delete later
   struct MessageData {
     int index;
@@ -287,7 +287,7 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
  * @param Text 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text) {
+sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String message) {
 
   me->IsSending = true;
   if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
@@ -306,7 +306,7 @@ sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text
   }
 
   me->IsSending = true;
-  me->ComPort->print(Text);
+  me->ComPort->print(message);
   me->ComPort->write(SEND_SMS_END);
 
   delay(10);
@@ -318,6 +318,55 @@ sim800_res_t fSim800_SendSMS(sSim800 * const me, String PhoneNumber, String Text
   me->IsSending = false;
 
 	return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param me 
+ * @param Text 
+ * @return sim800_res_t 
+ */
+sim800_res_t fSim800_SMSSendToAll(sSim800 * const me, String message) {
+
+  if(me == NULL) {
+
+    Serial.println("SIM800 not initialized");
+    return SIM800_RES_INIT_FAIL;
+  }
+
+  if (me->SavedPhoneNumbers.size() == 0) {
+
+    Serial.println("No phone numbers in SavedPhoneNumbers");
+    return SIM800_RES_PHONENUMBER_NOT_FOUND;
+  }
+
+  bool allSent = true;
+
+  JsonObject phoneNumbers = me->SavedPhoneNumbers.as<JsonObject>();
+  for (JsonObject::iterator it = phoneNumbers.begin(); it != phoneNumbers.end(); ++it) {
+
+    String phoneNumber = it->key().c_str(); // Get phone number (key)
+    int isAdmin = it->value().as<int>();    // Get isadmin value (0 or 1)
+
+    Serial.printf("Sending SMS to %s (Admin: %d): %s\n", phoneNumber.c_str(), isAdmin, message.c_str());
+
+    sim800_res_t result = fSim800_SMSSend(me, phoneNumber, message);
+    if (result != SIM800_RES_OK) {
+
+      Serial.printf("Failed to send SMS to %s: %d\n", phoneNumber.c_str(), result);
+      allSent = false;
+
+    } else {
+      Serial.printf("Successfully sent SMS to %s\n", phoneNumber.c_str());
+    }
+
+    // Small delay to prevent overwhelming SIM800 and avoid brownout
+    delay(1000); // Adjust based on SIM800 response time and power stability
+    yield();     // Prevent watchdog timeout
+  }
+
+  return allSent ? SIM800_RES_OK : SIM800_RES_SEND_SMS_FAIL;
 }
 
 /**
