@@ -58,7 +58,8 @@ typedef uint8_t sim800_res_t;
 
 typedef enum {
   
-  eSYSTEM_COMMAND  = 0,
+  eNO_COMMAND = 0,
+  eSYSTEM_COMMAND,
   eLAMP_COMMAND,
   eIP_COMMAND,
   eALARM_COMMAND,
