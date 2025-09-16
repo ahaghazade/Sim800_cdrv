@@ -35,6 +35,7 @@ extern "C" {
 
 /* Exported defines ----------------------------------------------------------*/
 #define WAIT_FOR_COMMAND_RESPONSE_MS            3000
+#define WAIT_FOR_SIM800_READY_SEND_COMMAND      3000
 
 /**
  * @brief Return codes for sim800 operations
