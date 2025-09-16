@@ -89,6 +89,7 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
  * @param me 
  */
 void fSim800_Run(sSim800 * const me) {
+
   if (me == NULL || !me->Init || me->IsSending) return;
 
   Serial.println("Checking inbox...");
@@ -130,6 +131,7 @@ void fSim800_Run(sSim800 * const me) {
         );
 
         // Delete after reading
+        me->IsSending = false;
         String deleteCmd = "AT+CMGD=" + String(me->_args.MassageData.index) + ",0";
         fSim800_SendCommand(me, deleteCmd, "OK");
 
@@ -225,11 +227,15 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
  */
 sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String Text) {
 
+  Serial.print("Sending sms to ");Serial.println(PhoneNumber);
   unsigned long startTime = millis();
-  while(me->IsSending && startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  while(me->IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
   if(me->IsSending) {
-    return SIM800_RES_SEND_COMMAND_FAIL;
+    return SIM800_RES_SEND_SMS_FAIL;
   }
+
+  Serial.println("Start sending");
+
   if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
@@ -273,7 +279,7 @@ sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String Desi
   int commandTries = 0;
 
   unsigned long startTime = millis();
-  while(me->IsSending && startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  while(me->IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
   if(me->IsSending) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
