@@ -71,6 +71,14 @@ typedef enum {
   
 }eCommandType;
 
+typedef enum {
+  
+  SMS_IDLE,
+  SMS_HEADER,
+  SMS_BODY
+
+}eSmsState;
+
 /**
  * @brief 
  * 
@@ -119,49 +127,50 @@ typedef struct {
 
     Stream* ComPort;
 
-    void(*_pfCommandEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    void(*_pfCommandEvent)(sSim800RecievedMassgeDone *e);
 
     sSim800RecievedMassgeDone _args;
 
-    // void(*_pfLampEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfLampEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfIpEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfIpEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfAlarmEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfAlarmEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfMonixideEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfMonixideEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfFireEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfFireEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfHumidityEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfHumidityEvent)(sSim800RecievedMassgeDone *e);
 
-    // void(*_pfTempEvent)(void *sender, sSim800RecievedMassgeDone *e);
+    // void(*_pfTempEvent)(sSim800RecievedMassgeDone *e);
 
 }sSim800;
 
 /* Exported constants --------------------------------------------------------*/
 /* Exported functions prototypes ---------------------------------------------*/
-sim800_res_t fSim800_Init(sSim800 * const me);
-void fSim800_Run(sSim800 * const me);
-sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool IsAdmin);
-sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber);
-sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me);
-sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String message);
-sim800_res_t fSim800_SMSSendToAll(sSim800 * const me, String message);
-sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String DesiredResponse);
-sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance);
+sim800_res_t fSim800_Init(void);
+void fSim800_Run(void);
+sim800_res_t fSim800_AddPhoneNumber(String PhoneNumber, bool IsAdmin);
+sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber);
+sim800_res_t fSim800_RemoveAllPhoneNumbers(void);
+sim800_res_t fSim800_SMSSend(String PhoneNumber, String message);
+sim800_res_t fSim800_SMSSendToAll(String message);
+sim800_res_t fSim800_SendCommand(String Command, String DesiredResponse);
+sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance);
 
-sim800_res_t fSim800_RegisterCommandEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *pArgs));
-// sim800_res_t fSim800_RegisterLampEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterIpEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterAlarmEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterMonixideEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterFireEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterHumidityEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
-// sim800_res_t fSim800_RegisterTempEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *e));
+sim800_res_t fSim800_RegisterCommandEvent(void(*fpFunc)(sSim800RecievedMassgeDone *pArgs));
+// sim800_res_t fSim800_RegisterLampEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterIpEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterAlarmEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterMonixideEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterFireEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterHumidityEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
+// sim800_res_t fSim800_RegisterTempEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
 
 
 /* Exported variables --------------------------------------------------------*/
+extern sSim800 Sim800;
 
 #ifdef __cplusplus
 }

@@ -27,24 +27,25 @@
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 #define fNotifyEventCommand_() \
-	if(me->_pfCommandEvent != NULL) { \
-		me->_pfCommandEvent(me, &(me->_args)); \
+	if(Sim800._pfCommandEvent != NULL) { \
+		Sim800._pfCommandEvent(&(Sim800._args)); \
 	}
 /* Private typedef -----------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
 
 /* Private function prototypes -----------------------------------------------*/
-static sim800_res_t fLoadPhoneNumbers(sSim800 * const me, String Path);
-static sim800_res_t fSavePhoneNumbers(sSim800 * const me, String Path);
+static sim800_res_t fLoadPhoneNumbers(String Path);
+static sim800_res_t fSavePhoneNumbers(String Path);
 static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalized);
-static sim800_res_t fGSM_Init(sSim800 * const me);
-static sim800_res_t fInbox_Read();
-static sim800_res_t fInbox_Clear();
-static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine);
-static sim800_res_t fRecivedSms_CheckCommand(sSim800 * const me);
+static sim800_res_t fGSM_Init(void);
+static sim800_res_t fInbox_Read(void);
+static sim800_res_t fInbox_Clear(void);
+static sim800_res_t fRecivedSms_Parse(const String *pLine);
+static sim800_res_t fRecivedSms_CheckCommand(void);
 
 /* Variables -----------------------------------------------------------------*/
+sSim800 Sim800;
 
 /*
 ╔═════════════════════════════════════════════════════════════════════════════════╗
@@ -56,29 +57,26 @@ static sim800_res_t fRecivedSms_CheckCommand(sSim800 * const me);
  * @param me 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_Init(sSim800 * const me) {
+sim800_res_t fSim800_Init(void) {
 
-  if(me == NULL) {
-    return SIM800_RES_INIT_FAIL;
-  }
 
-  me->Init = false;
+  Sim800.Init = false;
 
   if (!SPIFFS.begin(true)) { 
     return SIM800_RES_INIT_FAIL;
   }
 
-  if(fLoadPhoneNumbers(me, SavedPhoneNumbersPath) != SIM800_RES_OK) {
+  if(fLoadPhoneNumbers(SavedPhoneNumbersPath) != SIM800_RES_OK) {
     return SIM800_RES_INIT_FAIL;
   }
 
-  if(fGSM_Init(me) != SIM800_RES_OK) {
+  if(fGSM_Init() != SIM800_RES_OK) {
     return SIM800_RES_INIT_FAIL;
   }
 
-  me->EnableSengingSMS = true;
-  me->Init = true;
-  me->IsSending = false;
+  Sim800.EnableSengingSMS = true;
+  Sim800.Init = true;
+  Sim800.IsSending = false;
 
   return SIM800_RES_OK;
 }
@@ -88,62 +86,75 @@ sim800_res_t fSim800_Init(sSim800 * const me) {
  * 
  * @param me 
  */
-void fSim800_Run(sSim800 * const me) {
+void fSim800_Run(void) {
 
-  if (me == NULL || !me->Init || me->IsSending) return;
+  if(!Sim800.Init || Sim800.IsSending) return;
 
-  Serial.println("Checking inbox...");
-
-  me->IsSending = true;
-  me->ComPort->println("AT+CMGL=\"REC UNREAD\"");
+  Sim800.IsSending = true;
+  Sim800.ComPort->println("AT+CMGL=\"REC UNREAD\"");
 
   unsigned long startTime = millis();
-  bool finished = false;
+  eSmsState state = SMS_IDLE;
+  int pendingDeleteIndex = -1;
 
-  while (!finished && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
-    while (me->ComPort->available() > 0) {
-      String line = me->ComPort->readStringUntil('\n');
+  Serial.println("checking inbox...");
+
+  while(millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+
+    if(Sim800.ComPort->available() > 0) {
+
+      String line = Sim800.ComPort->readStringUntil('\n');
       line.trim();
-      if (line.length() == 0) continue;
+      if(line.length() == 0) continue;
 
       if (line == "OK") {
-        
-        finished = true; // no more messages
-        break;
+        break; // end of listing
       }
 
-      if (line.startsWith("+CMGL:")) {
-        // Parse header
-        if (fRecivedSms_Parse(me, &line) != SIM800_RES_OK) {
-          me->IsSending = false;
-          return;
+      if(line.startsWith("+CMGL:")) {
+
+        Serial.print("parsing line: ");Serial.println(line);
+
+        if(fRecivedSms_Parse(&line) == SIM800_RES_OK) {
+          state = SMS_BODY;//next lines are body
+        }else {
+          state = SMS_IDLE;
         }
 
-        // Next line = SMS body
-        String message = me->ComPort->readStringUntil('\n');
-        message.trim();
-        me->_args.MassageData.Massage = message;
+      }else if(state == SMS_BODY) {
+
+        Serial.println("----------New massage-----------");
+        Serial.println(line);
+        // This is SMS body
+        Sim800._args.MassageData.Massage = line;
 
         Serial.printf("SMS (index %d) from %s : %s\n",
-          me->_args.MassageData.index,
-          me->_args.MassageData.phoneNumber,
-          me->_args.MassageData.Massage.c_str()
+          Sim800._args.MassageData.index,
+          Sim800._args.MassageData.phoneNumber,
+          Sim800._args.MassageData.Massage.c_str()
         );
 
-        // Delete after reading
-        me->IsSending = false;
-        String deleteCmd = "AT+CMGD=" + String(me->_args.MassageData.index) + ",0";
-        fSim800_SendCommand(me, deleteCmd, "OK");
+        // process SMS
+        fRecivedSms_CheckCommand();
 
-        // Process if needed
-        fRecivedSms_CheckCommand(me);
+        // mark for deletion
+        pendingDeleteIndex = Sim800._args.MassageData.index;
+
+        state = SMS_IDLE;
       }
     }
   }
 
-  me->IsSending = false;
-}
+  // Delete after finishing loop
+  if (pendingDeleteIndex >= 0) {
 
+    Serial.printf("deleting massage index %d\n", pendingDeleteIndex);
+    String deleteCmd = "AT+CMGD=" + String(pendingDeleteIndex) + ",0";
+    fSim800_SendCommand(deleteCmd, "OK");
+  }
+
+  Sim800.IsSending = false;
+}
 
 
 /**
@@ -154,9 +165,9 @@ void fSim800_Run(sSim800 * const me) {
  * @param IsAdmin 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool IsAdmin) {
+sim800_res_t fSim800_AddPhoneNumber(String PhoneNumber, bool IsAdmin) {
 
-  if(me == NULL || !me->Init) {
+  if(!Sim800.Init) {
     return SIM800_RES_INIT_FAIL;
   }
 
@@ -165,8 +176,8 @@ sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
-  me->SavedPhoneNumbers[NormalizedPhoneNumber] = IsAdmin? 1 : 0;
-  fSavePhoneNumbers(me, SavedPhoneNumbersPath);
+  Sim800.SavedPhoneNumbers[NormalizedPhoneNumber] = IsAdmin? 1 : 0;
+  fSavePhoneNumbers(SavedPhoneNumbersPath);
 
   return SIM800_RES_OK;
 }
@@ -178,9 +189,9 @@ sim800_res_t fSim800_AddPhoneNumber(sSim800 * const me, String PhoneNumber, bool
  * @param PhoneNumber 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber) {
+sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber) {
 
-  if (me == NULL || !me->Init) {
+  if (!Sim800.Init) {
     return SIM800_RES_INIT_FAIL;
   }
 
@@ -189,12 +200,12 @@ sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber) {
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
-  if (!me->SavedPhoneNumbers.containsKey(NormalizedPhoneNumber)) {
+  if (!Sim800.SavedPhoneNumbers.containsKey(NormalizedPhoneNumber)) {
     return SIM800_RES_PHONENUMBER_NOT_FOUND;
   }
 
-  me->SavedPhoneNumbers.remove(NormalizedPhoneNumber);
-  fSavePhoneNumbers(me, SavedPhoneNumbersPath);
+  Sim800.SavedPhoneNumbers.remove(NormalizedPhoneNumber);
+  fSavePhoneNumbers(SavedPhoneNumbersPath);
 
   return SIM800_RES_OK;
 }
@@ -206,13 +217,13 @@ sim800_res_t fSim800_RemovePhoneNumber(sSim800 * const me, String PhoneNumber) {
  * @param PhoneNumber 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
+sim800_res_t fSim800_RemoveAllPhoneNumbers(void) {
 
-  if(me == NULL || !me->Init) {
+  if(!Sim800.Init) {
     return SIM800_RES_INIT_FAIL;
   }
 
-  me->SavedPhoneNumbers.clear();
+  Sim800.SavedPhoneNumbers.clear();
 
   return SIM800_RES_OK;
 }
@@ -225,18 +236,18 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(sSim800 * const me) {
  * @param Text 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String Text) {
+sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
 
   Serial.print("Sending sms to ");Serial.println(PhoneNumber);
   unsigned long startTime = millis();
-  while(me->IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
-  if(me->IsSending) {
+  while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  if(Sim800.IsSending) {
     return SIM800_RES_SEND_SMS_FAIL;
   }
 
   Serial.println("Start sending");
 
-  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
@@ -246,21 +257,21 @@ sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String Text
   }
 
   String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
-  if(fSim800_SendCommand(me, TargetPhoneNumber, SEND_SMS_START)) {
+  if(fSim800_SendCommand(TargetPhoneNumber, SEND_SMS_START)) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
-  me->IsSending = true;
-  me->ComPort->print(Text);
-  me->ComPort->write(SEND_SMS_END);
+  Sim800.IsSending = true;
+  Sim800.ComPort->print(Text);
+  Sim800.ComPort->write(SEND_SMS_END);
 
   delay(10);
 
-  if(fSim800_SendCommand(me, AT, ATOK)) {
+  if(fSim800_SendCommand( AT, ATOK)) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
-  me->IsSending = false;
+  Sim800.IsSending = false;
 
 	return SIM800_RES_OK;
 }
@@ -273,32 +284,32 @@ sim800_res_t fSim800_SMSSend(sSim800 * const me, String PhoneNumber, String Text
  * @param DesiredResponse 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String DesiredResponse) {
+sim800_res_t fSim800_SendCommand(String Command, String DesiredResponse) {
 
   bool commandResponsed = false;
   int commandTries = 0;
 
   unsigned long startTime = millis();
-  while(me->IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
-  if(me->IsSending) {
+  while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  if(Sim800.IsSending) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
-  while(!commandResponsed && commandTries < me->CommandSendRetries) {
+  while(!commandResponsed && commandTries < Sim800.CommandSendRetries) {
     
     commandTries++;
-    me->IsSending = true;
+    Sim800.IsSending = true;
     
     Serial.printf("\nSending %s  ...(%d) -- desired response: %s\n", Command.c_str(), commandTries, DesiredResponse);
 
-    me->ComPort->println(Command);
+    Sim800.ComPort->println(Command);
     unsigned long startTime = millis();
 
     while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
 
-      while(me->ComPort->available() > 0) {  
+      while(Sim800.ComPort->available() > 0) {  
 
-        String line = me->ComPort->readString();
+        String line = Sim800.ComPort->readString();
 
         Serial.println("==== readed data =====");  
         Serial.println(line);
@@ -316,7 +327,7 @@ sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String Desi
     delay(100);
   }
 
-  me->IsSending = false;
+  Sim800.IsSending = false;
 
   if(commandResponsed == true) {
     return SIM800_RES_OK;
@@ -332,7 +343,7 @@ sim800_res_t fSim800_SendCommand(sSim800 * const me, String Command, String Desi
  * @param pBalance 
  * @return sim800_res_t 
  */
-sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance) {
+sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance) {
 
 
   return SIM800_RES_OK;
@@ -345,13 +356,13 @@ sim800_res_t fSim800_GetSimcardBalance(sSim800 * const me, uint16_t *pBalance) {
  * @param fpFunc 
  * @return uint8_t 
  */
-sim800_res_t fSim800_RegisterCommandEvent(sSim800 * const me, void(*fpFunc)(void *sender, sSim800RecievedMassgeDone *pArgs)) {
+sim800_res_t fSim800_RegisterCommandEvent(void(*fpFunc)(sSim800RecievedMassgeDone *pArgs)) {
 	
-	if(me == NULL || fpFunc == NULL) {
+	if(fpFunc == NULL) {
     return SIM800_RES_INIT_FAIL;
   }
 
-	me->_pfCommandEvent = fpFunc;
+	Sim800._pfCommandEvent = fpFunc;
 	
 	return SIM800_RES_OK;
 }
@@ -368,14 +379,14 @@ sim800_res_t fSim800_RegisterCommandEvent(sSim800 * const me, void(*fpFunc)(void
  * @param Path 
  * @return sim800_res_t 
  */
-static sim800_res_t fSavePhoneNumbers(sSim800 * const me, String Path) {
+static sim800_res_t fSavePhoneNumbers(String Path) {
 
   File file = SPIFFS.open(Path, FILE_WRITE);
   if(!file) {
     return SIM800_RES_LOAD_JSON_FIAL;
   }
 
-  serializeJson(me->SavedPhoneNumbers, file);
+  serializeJson(Sim800.SavedPhoneNumbers, file);
   file.close();
 
   return SIM800_RES_OK;
@@ -388,13 +399,13 @@ static sim800_res_t fSavePhoneNumbers(sSim800 * const me, String Path) {
  * @param Path 
  * @return sim800_res_t 
  */
-static sim800_res_t fLoadPhoneNumbers(sSim800 * const me, String Path) {
+static sim800_res_t fLoadPhoneNumbers(String Path) {
 
   File file = SPIFFS.open(Path, FILE_READ);
   if(!file) {
     return SIM800_RES_LOAD_JSON_FIAL;
   }
-  deserializeJson(me->SavedPhoneNumbers, file);
+  deserializeJson(Sim800.SavedPhoneNumbers, file);
   file.close();
 
   return SIM800_RES_OK;
@@ -425,35 +436,35 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
  * 
  * @return sim800_res_t 
  */
-static sim800_res_t fGSM_Init(sSim800 * const me) {
+static sim800_res_t fGSM_Init(void) {
 
-  if(fSim800_SendCommand(me, AT, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand( AT, ATOK) != SIM800_RES_OK) {
     // RestartGSM();
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
     return SIM800_RES_SIMCARD_NOT_INSERTED;
   }
-  if(fSim800_SendCommand(me,RESET_FACTORY, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(RESET_FACTORY, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,IRANCELL, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(me,SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(me->EnableDeliveryReport) {
-    if(fSim800_SendCommand(me, DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+  if(Sim800.EnableDeliveryReport) {
+    if(fSim800_SendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       return SIM800_RES_SEND_SMS_FAIL;
     }
   }
@@ -461,7 +472,7 @@ static sim800_res_t fGSM_Init(sSim800 * const me) {
   return SIM800_RES_OK;
 }
 
-static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine) {
+static sim800_res_t fRecivedSms_Parse(const String *pLine) {
 
   if (!pLine->startsWith("+CMGL:")) {
     return SIM800_RES_REVIEVED_SMS_INVALID;
@@ -473,7 +484,7 @@ static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine) {
 
   // Extract index
   String idxStr = pLine->substring(6, firstComma);
-  me->_args.MassageData.index = idxStr.toInt();
+  Sim800._args.MassageData.index = idxStr.toInt();
 
   // Extract phone number (inside 3rd quoted string)
   int firstQuote = pLine->indexOf('"', firstComma + 1);   // "REC UNREAD"
@@ -485,7 +496,7 @@ static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine) {
   if (thirdQuote == -1 || fourthQuote == -1) return SIM800_RES_REVIEVED_SMS_INVALID;
   String phoneNumber = pLine->substring(thirdQuote + 1, fourthQuote);
 
-  if(fNormalizedPhoneNumber(phoneNumber, &me->_args.MassageData.phoneNumber) != SIM800_RES_OK) {
+  if(fNormalizedPhoneNumber(phoneNumber, &Sim800._args.MassageData.phoneNumber) != SIM800_RES_OK) {
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
@@ -493,7 +504,7 @@ static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine) {
   int lastQuoteOpen = pLine->lastIndexOf('"');
   int lastQuoteClose = pLine->lastIndexOf('"', lastQuoteOpen - 1);
   if (lastQuoteOpen > lastQuoteClose) {
-    me->_args.MassageData.dateTime = pLine->substring(lastQuoteClose + 1, lastQuoteOpen);
+    Sim800._args.MassageData.dateTime = pLine->substring(lastQuoteClose + 1, lastQuoteOpen);
   }
 
   return SIM800_RES_OK;
@@ -505,58 +516,60 @@ static sim800_res_t fRecivedSms_Parse(sSim800 * const me, const String *pLine) {
  * @param pRecSms 
  * @return sim800_res_t 
  */
-static sim800_res_t fRecivedSms_CheckCommand(sSim800 * const me) {
+static sim800_res_t fRecivedSms_CheckCommand(void) {
 
-  if(me->SavedPhoneNumbers.containsKey(me->_args.MassageData.phoneNumber)) {
+  if(Sim800.SavedPhoneNumbers.containsKey(Sim800._args.MassageData.phoneNumber)) {
 
     Serial.println("Recived sms from admin, check command");
 
-    me->_args.MassageData.Massage.toLowerCase();
+    Sim800._args.MassageData.Massage.toLowerCase();
     bool commandIsValid = false;
 
-    if(me->_args.MassageData.Massage.indexOf(SYSTEM) != -1) {
+    if(Sim800._args.MassageData.Massage.indexOf(SYSTEM) != -1) {
 
-      me->_args.CommandType = eSYSTEM_COMMAND;
+      Sim800._args.CommandType = eSYSTEM_COMMAND;
       commandIsValid = true;
     
-    } else if(me->_args.MassageData.Massage.indexOf(LAMP) != -1) {
+    } else if(Sim800._args.MassageData.Massage.indexOf(LAMP) != -1) {
 
-      me->_args.CommandType = eLAMP_COMMAND;
+      Sim800._args.CommandType = eLAMP_COMMAND;
       commandIsValid = true;
 
-    } else if(me->_args.MassageData.Massage.indexOf(SMSIP) != -1) {
+    } else if(Sim800._args.MassageData.Massage.indexOf(SMSIP) != -1) {
 
-      me->_args.CommandType = eIP_COMMAND;
+      Sim800._args.CommandType = eIP_COMMAND;
       commandIsValid = true;
 
-    } else if (me->_args.MassageData.Massage.indexOf(ALARM) != -1) {
+    } else if (Sim800._args.MassageData.Massage.indexOf(ALARM) != -1) {
 
-      me->_args.CommandType = eALARM_COMMAND;
+      Sim800._args.CommandType = eALARM_COMMAND;
       commandIsValid = true;
 
-    } else if (me->_args.MassageData.Massage.indexOf(MONOXIDE)!=-1) {
+    } else if (Sim800._args.MassageData.Massage.indexOf(MONOXIDE)!=-1) {
 
-      me->_args.CommandType = eMONIXIDE_COMMAND;
+      Sim800._args.CommandType = eMONIXIDE_COMMAND;
       commandIsValid = true;
 
-    } else if(me->_args.MassageData.Massage.indexOf(FIRE)!=-1) {
+    } else if(Sim800._args.MassageData.Massage.indexOf(FIRE)!=-1) {
 
-      me->_args.CommandType = eFIRE_COMMAND;
+      Sim800._args.CommandType = eFIRE_COMMAND;
       commandIsValid = true;
 
-    } else if(me->_args.MassageData.Massage.indexOf(HUMIDITY)!=-1) {
+    } else if(Sim800._args.MassageData.Massage.indexOf(HUMIDITY)!=-1) {
       
-      me->_args.CommandType = eHUMIDITY_COMMAND;
+      Sim800._args.CommandType = eHUMIDITY_COMMAND;
       commandIsValid = true;
-    } else if (me->_args.MassageData.Massage.indexOf(TEMP)!=-1) {
+    } else if (Sim800._args.MassageData.Massage.indexOf(TEMP)!=-1) {
 
-      me->_args.CommandType = eTEMP_COMMAND;
+      Sim800._args.CommandType = eTEMP_COMMAND;
       commandIsValid = true;
     }
     
     if(commandIsValid) {
 
+      Sim800.IsSending = false;
       fNotifyEventCommand_();
+      Sim800.IsSending = true;
       return SIM800_RES_OK;
 
     } else {
