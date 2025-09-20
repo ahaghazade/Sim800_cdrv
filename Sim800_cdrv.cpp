@@ -488,32 +488,41 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
 static sim800_res_t fGSM_Init(void) {
 
   if(fSim800_SendCommand( AT, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     // RestartGSM();
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SIMCARD_NOT_INSERTED;
   }
   if(fSim800_SendCommand(RESET_FACTORY, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(Sim800.EnableDeliveryReport) {
     if(fSim800_SendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+      Sim800.IsSending = false;
       return SIM800_RES_SEND_SMS_FAIL;
     }
   }
