@@ -240,7 +240,8 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
 
   Serial.print("Sending sms to ");Serial.println(PhoneNumber);
   unsigned long startTime = millis();
-  while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
+
   if(Sim800.IsSending) {
     return SIM800_RES_SEND_SMS_FAIL;
   }
@@ -248,16 +249,19 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
   Serial.println("Start sending");
 
   if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
   String NormalizedPhoneNum;
   if(fNormalizedPhoneNumber(PhoneNumber, &NormalizedPhoneNum) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
   String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
   if(fSim800_SendCommand(TargetPhoneNumber, SEND_SMS_START)) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
@@ -265,15 +269,60 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
   Sim800.ComPort->print(Text);
   Sim800.ComPort->write(SEND_SMS_END);
 
-  delay(10);
-
-  if(fSim800_SendCommand( AT, ATOK)) {
+  delay(100);
+  Sim800.IsSending = false;
+  if(fSim800_SendCommand(AT, ATOK)) {
+    Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
   Sim800.IsSending = false;
 
 	return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param me 
+ * @param message 
+ * @return sim800_res_t 
+ */
+sim800_res_t fSim800_SMSSendToAll(String message) {
+
+
+  if (Sim800.SavedPhoneNumbers.size() == 0) {
+
+    Serial.println("No phone numbers in SavedPhoneNumbers");
+    return SIM800_RES_PHONENUMBER_NOT_FOUND;
+  }
+
+  bool allSent = true;
+
+  JsonObject phoneNumbers = Sim800.SavedPhoneNumbers.as<JsonObject>();
+  for (JsonObject::iterator it = phoneNumbers.begin(); it != phoneNumbers.end(); ++it) {
+
+    String phoneNumber = it->key().c_str(); // Get phone number (key)
+    int isAdmin = it->value().as<int>();    // Get isadmin value (0 or 1)
+
+    Serial.printf("Sending SMS to %s (Admin: %d): %s\n", phoneNumber.c_str(), isAdmin, message.c_str());
+
+    sim800_res_t result = fSim800_SMSSend(phoneNumber, message);
+    if (result != SIM800_RES_OK) {
+
+      Serial.printf("Failed to send SMS to %s: %d\n", phoneNumber.c_str(), result);
+      allSent = false;
+
+    } else {
+      Serial.printf("Successfully sent SMS to %s\n", phoneNumber.c_str());
+    }
+
+    // Small delay to prevent overwhelming SIM800 and avoid brownout
+    delay(1000); // Adjust based on SIM800 response time and power stability
+    yield();     // Prevent watchdog timeout
+  }
+
+  return allSent ? SIM800_RES_OK : SIM800_RES_SEND_SMS_FAIL;
 }
 
 /**
