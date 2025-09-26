@@ -238,19 +238,21 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(void) {
  */
 sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
 
+  int retryCount = 0;
+  bool deliveryReceived = false;
+
   Serial.print("Sending sms to ");Serial.println(PhoneNumber);
-  unsigned long startTime = millis();
-  while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
-
-  if(Sim800.IsSending) {
-    return SIM800_RES_SEND_SMS_FAIL;
-  }
-
-  Serial.println("Start sending");
 
   if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
+  if(Sim800.EnableDeliveryReport) {
+    if(fSim800_SendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+      Sim800.IsSending = false;
+      return SIM800_RES_SEND_SMS_FAIL;
+    }
   }
 
   String NormalizedPhoneNum;
@@ -259,26 +261,73 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
-  String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
-  if(fSim800_SendCommand(TargetPhoneNumber, SEND_SMS_START)) {
-    Sim800.IsSending = false;
-    return SIM800_RES_SEND_COMMAND_FAIL;
-  }
+  while(retryCount < WAIT_FOR_SIM800_SEND_SMS_TRYES && !deliveryReceived) {
 
-  Sim800.IsSending = true;
-  Sim800.ComPort->print(Text);
-  Sim800.ComPort->write(SEND_SMS_END);
+    unsigned long startTime = millis();
+    while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
 
-  delay(100);
-  Sim800.IsSending = false;
-  if(fSim800_SendCommand(AT, ATOK)) {
+    if(Sim800.IsSending) {
+      return SIM800_RES_SEND_SMS_FAIL;
+    }
+
+    Serial.println("Start sending");
+
+    String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
+    if(fSim800_SendCommand(TargetPhoneNumber, SEND_SMS_START)) {
+      Sim800.IsSending = false;
+      return SIM800_RES_SEND_COMMAND_FAIL;
+    }
+
+    Sim800.IsSending = true;
+    Sim800.ComPort->print(Text);
+    Sim800.ComPort->write(SEND_SMS_END);
+    delay(100);
     Sim800.IsSending = false;
-    return SIM800_RES_SEND_COMMAND_FAIL;
+    
+    if(Sim800.EnableDeliveryReport) {
+
+      // Check for delivery report if enabled
+      if(Sim800.EnableDeliveryReport) {
+
+        if(checkForDeliveryReport() == SIM800_RES_OK) {
+
+          Serial.println("SMS delivery confirmed.");
+          deliveryReceived = true;
+        } else {
+          Serial.println("No delivery report received within timeout.");
+        }
+      } else {
+        deliveryReceived = true; // No delivery report check, assume success
+      }
+    }
   }
 
   Sim800.IsSending = false;
 
 	return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @return sim800_res_t 
+ */
+static sim800_res_t checkForDeliveryReport(void) {
+
+  unsigned long startTime = millis();
+
+  while (millis() - startTime < WAIT_FOR_SIM800_SEND_SMS_DELIVERY) {
+    
+    if(Sim800.ComPort->available()) {
+
+      String incomingData = Sim800.ComPort->readString();
+      Serial.printf("incomingData\n %s\n", incomingData);
+      if (incomingData.indexOf("+CDS:") != -1) {
+        return SIM800_RES_OK;
+      }
+    }
+  }
+  return SIM800_RES_DELIVERY_REPORT_FAIL;
 }
 
 /**
@@ -487,7 +536,7 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
  */
 static sim800_res_t fGSM_Init(void) {
 
-  if(fSim800_SendCommand( AT, ATOK) != SIM800_RES_OK) {
+  if(fSim800_SendCommand(AT, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     // RestartGSM();
     return SIM800_RES_SEND_COMMAND_FAIL;
@@ -505,10 +554,6 @@ static sim800_res_t fGSM_Init(void) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(fSim800_SendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
-    Sim800.IsSending = false;
-    return SIM800_RES_SEND_COMMAND_FAIL;
-  }
-  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }

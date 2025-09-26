@@ -36,6 +36,8 @@ extern "C" {
 /* Exported defines ----------------------------------------------------------*/
 #define WAIT_FOR_COMMAND_RESPONSE_MS            3000
 #define WAIT_FOR_SIM800_READY_SEND_COMMAND      5000
+#define WAIT_FOR_SIM800_SEND_SMS_DELIVERY       30000
+#define WAIT_FOR_SIM800_SEND_SMS_TRYES          3
 
 /**
  * @brief Return codes for sim800 operations
@@ -53,6 +55,8 @@ typedef uint8_t sim800_res_t;
 #define SIM800_RES_PHONENUMBER_NOT_FOUND        ((uint8_t)7)
 #define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)8)
 #define SIM800_RES_REVIEVED_SMS_INVALID         ((uint8_t)9)
+#define SIM800_RES_DELIVERY_REPORT_FAIL         ((uint8_t)10)
+#define SIM800_RES_CALL_FAIL                    ((uint8_t)11)
 
 /* Exported macro ------------------------------------------------------------*/    
 /* Exported types ------------------------------------------------------------*/
@@ -155,6 +159,7 @@ sim800_res_t fSim800_AddPhoneNumber(String PhoneNumber, bool IsAdmin);
 sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber);
 sim800_res_t fSim800_RemoveAllPhoneNumbers(void);
 sim800_res_t fSim800_SMSSend(String PhoneNumber, String message);
+static sim800_res_t checkForDeliveryReport(void);
 sim800_res_t fSim800_SMSSendToAll(String message);
 sim800_res_t fSim800_SendCommand(String Command, String DesiredResponse);
 sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance);
