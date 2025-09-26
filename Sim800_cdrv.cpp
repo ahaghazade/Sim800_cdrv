@@ -43,6 +43,7 @@ static sim800_res_t fInbox_Read(void);
 static sim800_res_t fInbox_Clear(void);
 static sim800_res_t fRecivedSms_Parse(const String *pLine);
 static sim800_res_t fRecivedSms_CheckCommand(void);
+static sim800_res_t fCheckForDeliveryReport(void);
 
 /* Variables -----------------------------------------------------------------*/
 sSim800 Sim800;
@@ -289,22 +290,59 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
       // Check for delivery report if enabled
       if(Sim800.EnableDeliveryReport) {
 
-        if(checkForDeliveryReport() == SIM800_RES_OK) {
+        if(fCheckForDeliveryReport() == SIM800_RES_OK) {
 
           Serial.println("SMS delivery confirmed.");
           deliveryReceived = true;
+          break;
         } else {
           Serial.println("No delivery report received within timeout.");
         }
       } else {
         deliveryReceived = true; // No delivery report check, assume success
+        break;
       }
     }
   }
 
-  Sim800.IsSending = false;
+    Sim800.IsSending = false;
 
-	return SIM800_RES_OK;
+    if (!deliveryReceived && Sim800.EnableDeliveryReport) {
+
+    Serial.println("All SMS retries failed. Initiating call to " + PhoneNumber);
+    String phonenumber_call = "+98" + PhoneNumber.substring(1); // Adjust phone number format
+    String phonenumber_str = "ATD" + phonenumber_call + ";";
+    Sim800.ComPort->println(phonenumber_str.c_str());
+
+    // Wait for call response (e.g., OK or ERROR)
+    unsigned long callStartTime = millis();
+    bool callSuccess = false;
+
+    while (millis() - callStartTime < WIAT_FOR_CALL_RESPONSE) { // 5-second timeout for call response
+
+      if (Sim800.ComPort->available()) {
+
+        String response = Sim800.ComPort->readString();
+        if (response.indexOf("OK") != -1) {
+          Serial.println("Call initiated successfully.");
+          callSuccess = true;
+          break;
+        } else if (response.indexOf("ERROR") != -1) {
+          Serial.println("Call failed: ERROR response received.");
+          break;
+        }
+      }
+    }
+
+    if (!callSuccess) {
+      Serial.println("Call failed: No valid response within timeout.");
+      return SIM800_RES_CALL_FAIL; // Define this in your enum
+    }
+    return SIM800_RES_DELIVERY_REPORT_FAIL; // SMS failed, call attempted
+  }
+
+  Sim800.IsSending = false;
+  return deliveryReceived ? SIM800_RES_OK : SIM800_RES_DELIVERY_REPORT_FAIL;
 }
 
 /**
@@ -312,7 +350,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
  * 
  * @return sim800_res_t 
  */
-static sim800_res_t checkForDeliveryReport(void) {
+static sim800_res_t fCheckForDeliveryReport(void) {
 
   unsigned long startTime = millis();
 
@@ -321,8 +359,8 @@ static sim800_res_t checkForDeliveryReport(void) {
     if(Sim800.ComPort->available()) {
 
       String incomingData = Sim800.ComPort->readString();
-      Serial.printf("incomingData\n %s\n", incomingData);
       if (incomingData.indexOf("+CDS:") != -1) {
+        Serial.println("delivery report reviceved");
         return SIM800_RES_OK;
       }
     }
