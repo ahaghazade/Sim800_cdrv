@@ -459,7 +459,7 @@ uint32_t fSim800_CheckCredit(void) {
  */
 sim800_res_t fSim800_GetPhoneNumbers(JsonDocument *pDoc) {
 
-  pDoc = &(Sim800.SavedPhoneNumbers);
+  pDoc->set(Sim800.SavedPhoneNumbers);
   return SIM800_RES_OK;
 }
 
