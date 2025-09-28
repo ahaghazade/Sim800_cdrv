@@ -34,5 +34,5 @@
 #define CEILINGCONNECTION   "Warning! The alarm was disconnected from the ceiling."
 #define SatartupMSG     "Hello from Didomak."
 #define ACOFFMSG        "Warning! The AC power is out."
-#define ACONMSG         "The AC power is going on.
+#define ACONMSG         "The AC power is going on."
 #define STARTUP_MSG     "Hello from Didomak"
