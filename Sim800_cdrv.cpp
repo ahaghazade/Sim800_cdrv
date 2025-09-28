@@ -38,6 +38,7 @@ const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
 static sim800_res_t fLoadPhoneNumbers(String Path);
 static sim800_res_t fSavePhoneNumbers(String Path);
 static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalized);
+static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse = NULL);
 static sim800_res_t fGSM_Init(void);
 static sim800_res_t fInbox_Read(void);
 static sim800_res_t fInbox_Clear(void);
@@ -151,7 +152,7 @@ void fSim800_Run(void) {
 
     Serial.printf("deleting massage index %d\n", pendingDeleteIndex);
     String deleteCmd = "AT+CMGD=" + String(pendingDeleteIndex) + ",0";
-    fSim800_SendCommand(deleteCmd, "OK");
+    fSendCommand(deleteCmd, "OK");
   }
 
   Sim800.IsSending = false;
@@ -244,13 +245,13 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
 
   Serial.print("Sending sms to ");Serial.println(PhoneNumber);
 
-  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
   if(Sim800.EnableDeliveryReport) {
-    if(fSim800_SendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+    if(fSendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_SMS_FAIL;
     }
@@ -274,7 +275,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
     Serial.println("Start sending");
 
     String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
-    if(fSim800_SendCommand(TargetPhoneNumber, SEND_SMS_START)) {
+    if(fSendCommand(TargetPhoneNumber, SEND_SMS_START)) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_COMMAND_FAIL;
     }
@@ -416,66 +417,6 @@ sim800_res_t fSim800_SMSSendToAll(String message) {
  * @brief 
  * 
  * @param me 
- * @param Command 
- * @param DesiredResponse 
- * @return sim800_res_t 
- */
-sim800_res_t fSim800_SendCommand(String Command, String DesiredResponse) {
-
-  bool commandResponsed = false;
-  int commandTries = 0;
-
-  unsigned long startTime = millis();
-  while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
-  if(Sim800.IsSending) {
-    return SIM800_RES_SEND_COMMAND_FAIL;
-  }
-
-  while(!commandResponsed && commandTries < Sim800.CommandSendRetries) {
-    
-    commandTries++;
-    Sim800.IsSending = true;
-    
-    Serial.printf("\nSending %s  ...(%d) -- desired response: %s\n", Command.c_str(), commandTries, DesiredResponse);
-
-    Sim800.ComPort->println(Command);
-    unsigned long startTime = millis();
-
-    while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
-
-      while(Sim800.ComPort->available() > 0) {  
-
-        String line = Sim800.ComPort->readString();
-
-        Serial.println("==== readed data =====");  
-        Serial.println(line);
-        Serial.print("line indexOf(DesiredRes): ");
-        Serial.println(line.indexOf(DesiredResponse));
-
-        if (line.indexOf(DesiredResponse) != -1) {
-
-          Serial.printf("Request %s : Success.\n", Command.c_str());
-          commandResponsed = true;
-          break;
-        }
-      }
-    }
-    delay(100);
-  }
-
-  Sim800.IsSending = false;
-
-  if(commandResponsed == true) {
-    return SIM800_RES_OK;
-  } else {
-	return SIM800_RES_SEND_COMMAND_FAIL;
-  }
-}
-
-/**
- * @brief 
- * 
- * @param me 
  * @param pBalance 
  * @return sim800_res_t 
  */
@@ -483,6 +424,32 @@ sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance) {
 
 
   return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @return uint32_t 
+ */
+uint32_t fSim800_CheckCredit(void) {
+
+  fSendCommand("AT+CUSD=1", ATOK); 
+  fSendCommand("AT+CUSD=1,\"*555*4*3#\"", "72");
+  fSendCommand("AT+CUSD=1,\"2\"", "English"); 
+  //esp_task_wdt_reset();
+  delay(2000);
+  //esp_task_wdt_reset();
+  String balanceLine;
+  fSendCommand("AT+CUSD=1,\"*555*1*2#\"","Credit:", &balanceLine); 
+  fSendCommand("AT+CUSD=0",ATOK); 
+  //"CUSD: 0, \"On 1403/07/01.your balance is 687348 RialsA new generation of MyIrancell super app *45#\", 15␍";
+  int startIndex = balanceLine.indexOf("Credit:") + 7;
+  int endIndex   = balanceLine.indexOf("IRR");
+  String balanceStr = balanceLine.substring(startIndex, endIndex);
+  balanceStr.replace(",", "");
+  long balanceValue = balanceStr.toInt() / 10; //
+  Serial.printf(">>>>>>>>  balance is: %d\n", balanceValue);
+  return balanceValue;
 }
 
 /**
@@ -570,45 +537,110 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
 /**
  * @brief 
  * 
+ * @param me 
+ * @param Command 
+ * @param DesiredResponse 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse) {
+
+  bool commandResponsed = false;
+  int commandTries = 0;
+
+  unsigned long startTime = millis();
+  while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  if(Sim800.IsSending) {
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
+  while(!commandResponsed && commandTries < Sim800.CommandSendRetries) {
+    
+    commandTries++;
+    Sim800.IsSending = true;
+    
+    Serial.printf("\nSending %s  ...(%d) -- desired response: %s\n", Command.c_str(), commandTries, DesiredResponse);
+
+    Sim800.ComPort->println(Command);
+    unsigned long startTime = millis();
+
+    while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+
+      while(Sim800.ComPort->available() > 0) {  
+
+        String line = Sim800.ComPort->readString();
+
+        Serial.println("==== readed data =====");  
+        Serial.println(line);
+        Serial.print("line indexOf(DesiredRes): ");
+        Serial.println(line.indexOf(DesiredResponse));
+
+        if (line.indexOf(DesiredResponse) != -1) {
+
+          Serial.printf("Request %s : Success.\n", Command.c_str());
+          if(pResponse != NULL) {
+            *pResponse = line;
+          }
+          commandResponsed = true;
+          break;
+        }
+      }
+    }
+    delay(100);
+  }
+
+  Sim800.IsSending = false;
+
+  if(commandResponsed == true) {
+    return SIM800_RES_OK;
+  } else {
+	return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+}
+
+/**
+ * @brief 
+ * 
  * @return sim800_res_t 
  */
 static sim800_res_t fGSM_Init(void) {
 
-  if(fSim800_SendCommand(AT, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(AT, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     // RestartGSM();
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
+  if(fSendCommand(CHECK_SIMCARD_INSERTED, SIMCARD_INSERTED) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SIMCARD_NOT_INSERTED;
   }
-  if(fSim800_SendCommand(RESET_FACTORY, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(RESET_FACTORY, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSim800_SendCommand(SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(Sim800.EnableDeliveryReport) {
-    if(fSim800_SendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+    if(fSendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_SMS_FAIL;
     }
   }
+
+  fSim800_CheckCredit();
 
   return SIM800_RES_OK;
 }
