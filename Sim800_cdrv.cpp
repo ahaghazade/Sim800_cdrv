@@ -455,6 +455,16 @@ uint32_t fSim800_CheckCredit(void) {
 /**
  * @brief 
  * 
+ * @return JsonDocument 
+ */
+JsonDocument fSim800_GetPhoneNumbers(void) {
+
+  return Sim800.SavedPhoneNumbers;
+}
+
+/**
+ * @brief 
+ * 
  * @param me 
  * @param fpFunc 
  * @return uint8_t 

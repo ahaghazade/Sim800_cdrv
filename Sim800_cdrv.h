@@ -163,6 +163,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String message);
 sim800_res_t fSim800_SMSSendToAll(String message);
 sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance);
 uint32_t fSim800_CheckCredit(void);
+JsonDocument fSim800_GetPhoneNumbers(void);
 
 sim800_res_t fSim800_RegisterCommandEvent(void(*fpFunc)(sSim800RecievedMassgeDone *pArgs));
 // sim800_res_t fSim800_RegisterLampEvent(void(*fpFunc)(sSim800RecievedMassgeDone *e));
