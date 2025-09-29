@@ -38,7 +38,7 @@ const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
 static sim800_res_t fLoadPhoneNumbers(String Path);
 static sim800_res_t fSavePhoneNumbers(String Path);
 static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalized);
-static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse = NULL);
+static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse = nullptr);
 static sim800_res_t fGSM_Init(void);
 static sim800_res_t fInbox_Read(void);
 static sim800_res_t fInbox_Clear(void);
@@ -94,14 +94,14 @@ void fSim800_Run(void) {
 
   if(!Sim800.Init || Sim800.IsSending) return;
 
+  Serial.println("checking inbox...");
+
   Sim800.IsSending = true;
   Sim800.ComPort->println("AT+CMGL=\"REC UNREAD\"");
 
   unsigned long startTime = millis();
   eSmsState state = SMS_IDLE;
   int pendingDeleteIndex = -1;
-
-  // Serial.println("checking inbox...");
 
   while(millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
 
@@ -253,7 +253,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
   }
 
   if(Sim800.EnableDeliveryReport) {
-    if(fSendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+    if(fSendCommand(DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_SMS_FAIL;
     }
@@ -277,7 +277,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
     Serial.println("Start sending");
 
     String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
-    if(fSendCommand(TargetPhoneNumber, SEND_SMS_START)) {
+    if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_COMMAND_FAIL;
     }
@@ -592,7 +592,7 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
         if (line.indexOf(DesiredResponse) != -1) {
 
           Serial.printf("Request %s : Success.\n", Command.c_str());
-          if(pResponse != NULL) {
+          if(pResponse != nullptr) {
             *pResponse = line;
           }
           commandResponsed = true;
