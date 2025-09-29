@@ -63,20 +63,22 @@ sim800_res_t fSim800_Init(void) {
 
 
   Sim800.Init = false;
+  Sim800.IsSending = false;
+  Sim800.CommandSendRetries = SIM800_COMMAND_ATTEMPTS;
 
-  if (!SPIFFS.begin(true)) { 
+  if(!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed!");
     return SIM800_RES_INIT_FAIL;
   }
 
   if(fLoadPhoneNumbers(SavedPhoneNumbersPath) != SIM800_RES_OK) {
-    return SIM800_RES_INIT_FAIL;
+    return SIM800_RES_LOAD_JSON_FIAL;
   }
 
   if(fGSM_Init() != SIM800_RES_OK) {
-    return SIM800_RES_INIT_FAIL;
+    return SIM800_RES_INIT_GSM_FAIL;
   }
 
-  Sim800.EnableSengingSMS = true;
   Sim800.Init = true;
   Sim800.IsSending = false;
 
@@ -99,7 +101,7 @@ void fSim800_Run(void) {
   eSmsState state = SMS_IDLE;
   int pendingDeleteIndex = -1;
 
-  Serial.println("checking inbox...");
+  // Serial.println("checking inbox...");
 
   while(millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
 
@@ -263,7 +265,7 @@ sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
-  while(retryCount < WAIT_FOR_SIM800_SEND_SMS_TRYES && !deliveryReceived) {
+  while(retryCount < SIM800_SEND_SMS_ATTEMPTS && !deliveryReceived) {
 
     unsigned long startTime = millis();
     while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
@@ -559,7 +561,9 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
   int commandTries = 0;
 
   unsigned long startTime = millis();
+
   while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
+  
   if(Sim800.IsSending) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
@@ -650,8 +654,6 @@ static sim800_res_t fGSM_Init(void) {
       return SIM800_RES_SEND_SMS_FAIL;
     }
   }
-
-  fSim800_CheckCredit();
 
   return SIM800_RES_OK;
 }

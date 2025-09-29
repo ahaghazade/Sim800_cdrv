@@ -36,9 +36,10 @@ extern "C" {
 /* Exported defines ----------------------------------------------------------*/
 #define WAIT_FOR_COMMAND_RESPONSE_MS            3000
 #define WAIT_FOR_SIM800_READY_SEND_COMMAND      5000
+#define SIM800_COMMAND_ATTEMPTS                 3
 #define WAIT_FOR_SIM800_SEND_SMS_DELIVERY       10000
 #define WIAT_FOR_CALL_RESPONSE                  5000
-#define WAIT_FOR_SIM800_SEND_SMS_TRYES          3
+#define SIM800_SEND_SMS_ATTEMPTS                3
 
 /**
  * @brief Return codes for sim800 operations
@@ -48,16 +49,17 @@ typedef uint8_t sim800_res_t;
 
 #define SIM800_RES_OK                           ((uint8_t)0)
 #define SIM800_RES_INIT_FAIL                    ((uint8_t)1)
-#define SIM800_RES_SEND_COMMAND_FAIL            ((uint8_t)2)
-#define SIM800_RES_SEND_SMS_FAIL                ((uint8_t)3)
-#define SIM800_RES_SAVE_JSON_FAIL               ((uint8_t)4)
-#define SIM800_RES_LOAD_JSON_FIAL               ((uint8_t)5)
-#define SIM800_RES_PHONENUMBER_INVALID          ((uint8_t)6)
-#define SIM800_RES_PHONENUMBER_NOT_FOUND        ((uint8_t)7)
-#define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)8)
-#define SIM800_RES_REVIEVED_SMS_INVALID         ((uint8_t)9)
-#define SIM800_RES_DELIVERY_REPORT_FAIL         ((uint8_t)10)
-#define SIM800_RES_CALL_FAIL                    ((uint8_t)11)
+#define SIM800_RES_INIT_GSM_FAIL                ((uint8_t)2)
+#define SIM800_RES_SEND_COMMAND_FAIL            ((uint8_t)3)
+#define SIM800_RES_SEND_SMS_FAIL                ((uint8_t)4)
+#define SIM800_RES_SAVE_JSON_FAIL               ((uint8_t)5)
+#define SIM800_RES_LOAD_JSON_FIAL               ((uint8_t)6)
+#define SIM800_RES_PHONENUMBER_INVALID          ((uint8_t)7)
+#define SIM800_RES_PHONENUMBER_NOT_FOUND        ((uint8_t)8)
+#define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)9)
+#define SIM800_RES_REVIEVED_SMS_INVALID         ((uint8_t)10)
+#define SIM800_RES_DELIVERY_REPORT_FAIL         ((uint8_t)11)
+#define SIM800_RES_CALL_FAIL                    ((uint8_t)12)
 
 /* Exported macro ------------------------------------------------------------*/    
 /* Exported types ------------------------------------------------------------*/
@@ -119,8 +121,6 @@ typedef struct {
 typedef struct {
 
     bool Init;
-
-    bool EnableSengingSMS;
 
     bool IsSending;
 
