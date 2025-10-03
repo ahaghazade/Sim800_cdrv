@@ -721,6 +721,7 @@ static sim800_res_t fEnqueueMsg(String PhoneNumber, String Text) {
       Serial.println("SMS queue full!");
       return SIM800_RES_ENQUEUE_FAIL;
     }
+    Serial.printf("queue tail = %d\n", Sim800.QueueTail);
     Sim800.SmsQueue[Sim800.QueueTail].PhoneNumber = PhoneNumber;
     Sim800.SmsQueue[Sim800.QueueTail].Text = Text;
     Sim800.QueueTail = (Sim800.QueueTail + 1) % SIM800_SMS_QUEUE_SIZE;
@@ -798,36 +799,34 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_COMMAND_FAIL;
     }
-
+    Serial.println("1-------------");
     Sim800.IsSending = true;
     Sim800.ComPort->print(Text);
     Sim800.ComPort->write(SEND_SMS_END);
     delay(100);
     Sim800.IsSending = false;
-    
+    Serial.println("2-------------");
+
     if(Sim800.EnableDeliveryReport) {
 
-      // Check for delivery report if enabled
-      if(Sim800.EnableDeliveryReport) {
+      Serial.println("3-------------");
+      if(fCheckForDeliveryReport() == SIM800_RES_OK) {
 
-        if(fCheckForDeliveryReport() == SIM800_RES_OK) {
-
-          Serial.println("SMS delivery confirmed.");
-          deliveryReceived = true;
-          break;
-        } else {
-          Serial.println("No delivery report received within timeout.");
-        }
-      } else {
-        deliveryReceived = true; // No delivery report check, assume success
+        Serial.println("SMS delivery confirmed.");
+        deliveryReceived = true;
         break;
+      } else {
+        Serial.println("No delivery report received within timeout.");
       }
+    } else {
+      deliveryReceived = true; // No delivery report check, assume success
+      break;
     }
   }
 
-    Sim800.IsSending = false;
+  Sim800.IsSending = false;
 
-    if (!deliveryReceived && Sim800.EnableDeliveryReport) {
+  if (!deliveryReceived && Sim800.EnableDeliveryReport) {
 
     Serial.println("All SMS retries failed. Initiating call to " + PhoneNumber);
     String phonenumber_call = "+98" + PhoneNumber.substring(1); // Adjust phone number format
