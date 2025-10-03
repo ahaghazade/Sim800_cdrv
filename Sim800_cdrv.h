@@ -40,6 +40,7 @@ extern "C" {
 #define WAIT_FOR_SIM800_SEND_SMS_DELIVERY       10000
 #define WIAT_FOR_CALL_RESPONSE                  5000
 #define SIM800_SEND_SMS_ATTEMPTS                3
+#define SIM800_SMS_QUEUE_SIZE                   10
 
 /**
  * @brief Return codes for sim800 operations
@@ -47,22 +48,35 @@ extern "C" {
  */
 typedef uint8_t sim800_res_t;
 
-#define SIM800_RES_OK                           ((uint8_t)0)
-#define SIM800_RES_INIT_FAIL                    ((uint8_t)1)
-#define SIM800_RES_INIT_GSM_FAIL                ((uint8_t)2)
-#define SIM800_RES_SEND_COMMAND_FAIL            ((uint8_t)3)
-#define SIM800_RES_SEND_SMS_FAIL                ((uint8_t)4)
-#define SIM800_RES_SAVE_JSON_FAIL               ((uint8_t)5)
-#define SIM800_RES_LOAD_JSON_FIAL               ((uint8_t)6)
-#define SIM800_RES_PHONENUMBER_INVALID          ((uint8_t)7)
-#define SIM800_RES_PHONENUMBER_NOT_FOUND        ((uint8_t)8)
-#define SIM800_RES_SIMCARD_NOT_INSERTED         ((uint8_t)9)
-#define SIM800_RES_REVIEVED_SMS_INVALID         ((uint8_t)10)
-#define SIM800_RES_DELIVERY_REPORT_FAIL         ((uint8_t)11)
-#define SIM800_RES_CALL_FAIL                    ((uint8_t)12)
+#define SIM800_RES_OK                           ((sim800_res_t)0)
+#define SIM800_RES_INIT_FAIL                    ((sim800_res_t)1)
+#define SIM800_RES_INIT_GSM_FAIL                ((sim800_res_t)2)
+#define SIM800_RES_SEND_COMMAND_FAIL            ((sim800_res_t)3)
+#define SIM800_RES_SEND_SMS_FAIL                ((sim800_res_t)4)
+#define SIM800_RES_SAVE_JSON_FAIL               ((sim800_res_t)5)
+#define SIM800_RES_LOAD_JSON_FIAL               ((sim800_res_t)6)
+#define SIM800_RES_PHONENUMBER_INVALID          ((sim800_res_t)7)
+#define SIM800_RES_PHONENUMBER_NOT_FOUND        ((sim800_res_t)8)
+#define SIM800_RES_SIMCARD_NOT_INSERTED         ((sim800_res_t)9)
+#define SIM800_RES_REVIEVED_SMS_INVALID         ((sim800_res_t)10)
+#define SIM800_RES_DELIVERY_REPORT_FAIL         ((sim800_res_t)11)
+#define SIM800_RES_CALL_FAIL                    ((sim800_res_t)12)
+#define SIM800_RES_ENQUEUE_FAIL                 ((sim800_res_t)13)
+#define SIM800_RES_QUEUE_EMPTY                  ((sim800_res_t)14)
 
 /* Exported macro ------------------------------------------------------------*/    
 /* Exported types ------------------------------------------------------------*/
+/**
+ * @brief 
+ * 
+*/
+typedef struct {
+
+  String PhoneNumber;
+
+  String Text;
+    
+}sSmsMessage;
 
 typedef enum {
   
@@ -124,6 +138,14 @@ typedef struct {
 
     bool IsSending;
 
+    sSmsMessage SmsQueue[SIM800_SMS_QUEUE_SIZE];
+  
+    uint16_t QueueHead;
+  
+    uint16_t QueueTail;
+  
+    uint16_t QueueCount;
+  
     uint8_t CommandSendRetries;
 
     JsonDocument SavedPhoneNumbers;

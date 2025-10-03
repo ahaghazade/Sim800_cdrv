@@ -22,7 +22,6 @@
 
 #include <SPIFFS.h>
 #include <Arduino.h>
-#include <vector>
 
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
@@ -30,6 +29,7 @@
 	if(Sim800._pfCommandEvent != NULL) { \
 		Sim800._pfCommandEvent(&(Sim800._args)); \
 	}
+
 /* Private typedef -----------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 const char* SavedPhoneNumbersPath = "/PhoneNumbers.json";
@@ -45,6 +45,9 @@ static sim800_res_t fInbox_Clear(void);
 static sim800_res_t fRecivedSms_Parse(const String *pLine);
 static sim800_res_t fRecivedSms_CheckCommand(void);
 static sim800_res_t fCheckForDeliveryReport(void);
+static sim800_res_t fEnqueueMsg(String PhoneNumber, String Text);
+static sim800_res_t fDequeueMsg(sSmsMessage *msg);
+static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text);
 
 /* Variables -----------------------------------------------------------------*/
 sSim800 Sim800;
@@ -65,6 +68,9 @@ sim800_res_t fSim800_Init(void) {
   Sim800.Init = false;
   Sim800.IsSending = false;
   Sim800.CommandSendRetries = SIM800_COMMAND_ATTEMPTS;
+  Sim800.QueueCount = 0;
+  Sim800.QueueHead = 0;
+  Sim800.QueueTail = 0;
 
   if(!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed!");
@@ -93,6 +99,22 @@ sim800_res_t fSim800_Init(void) {
 void fSim800_Run(void) {
 
   if(!Sim800.Init || Sim800.IsSending) return;
+
+  sSmsMessage msg;
+  if(fDequeueMsg(&msg) == SIM800_RES_OK) {
+
+    sim800_res_t result = fSim800_SMSSend_Immediate(msg.PhoneNumber, msg.Text);
+
+    Sim800.IsSending = false;
+    if (result == SIM800_RES_OK) {
+        Serial.println("SMS sent successfully.");
+    } else {
+      Serial.printf("Failed to send SMS to %s (err=%d). Re-enqueueing...\n", msg.PhoneNumber.c_str(), result);
+      fEnqueueMsg(msg.PhoneNumber, msg.Text); // retry later
+    }
+    return; // only handle one per Run cycle to avoid WDT
+  }
+
 
   Serial.println("checking inbox...");
 
@@ -242,110 +264,13 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(void) {
  */
 sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
 
-  int retryCount = 0;
-  bool deliveryReceived = false;
+  if(!Sim800.Init) return SIM800_RES_INIT_FAIL;
 
-  Serial.print("Sending sms to ");Serial.println(PhoneNumber);
-
-  if(fSendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
-    Sim800.IsSending = false;
-    return SIM800_RES_SEND_COMMAND_FAIL;
+  if(!fEnqueueMsg(PhoneNumber, Text)) {
+    return SIM800_RES_ENQUEUE_FAIL;
   }
 
-  if(Sim800.EnableDeliveryReport) {
-    if(fSendCommand(DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
-      Sim800.IsSending = false;
-      return SIM800_RES_SEND_SMS_FAIL;
-    }
-  }
-
-  String NormalizedPhoneNum;
-  if(fNormalizedPhoneNumber(PhoneNumber, &NormalizedPhoneNum) != SIM800_RES_OK) {
-    Sim800.IsSending = false;
-    return SIM800_RES_PHONENUMBER_INVALID;
-  }
-
-  while(retryCount < SIM800_SEND_SMS_ATTEMPTS && !deliveryReceived) {
-
-    unsigned long startTime = millis();
-    while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
-
-    if(Sim800.IsSending) {
-      return SIM800_RES_SEND_SMS_FAIL;
-    }
-
-    Serial.println("Start sending");
-
-    String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
-    if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
-      Sim800.IsSending = false;
-      return SIM800_RES_SEND_COMMAND_FAIL;
-    }
-
-    Sim800.IsSending = true;
-    Sim800.ComPort->print(Text);
-    Sim800.ComPort->write(SEND_SMS_END);
-    delay(100);
-    Sim800.IsSending = false;
-    
-    if(Sim800.EnableDeliveryReport) {
-
-      // Check for delivery report if enabled
-      if(Sim800.EnableDeliveryReport) {
-
-        if(fCheckForDeliveryReport() == SIM800_RES_OK) {
-
-          Serial.println("SMS delivery confirmed.");
-          deliveryReceived = true;
-          break;
-        } else {
-          Serial.println("No delivery report received within timeout.");
-        }
-      } else {
-        deliveryReceived = true; // No delivery report check, assume success
-        break;
-      }
-    }
-  }
-
-    Sim800.IsSending = false;
-
-    if (!deliveryReceived && Sim800.EnableDeliveryReport) {
-
-    Serial.println("All SMS retries failed. Initiating call to " + PhoneNumber);
-    String phonenumber_call = "+98" + PhoneNumber.substring(1); // Adjust phone number format
-    String phonenumber_str = "ATD" + phonenumber_call + ";";
-    Sim800.ComPort->println(phonenumber_str.c_str());
-
-    // Wait for call response (e.g., OK or ERROR)
-    unsigned long callStartTime = millis();
-    bool callSuccess = false;
-
-    while (millis() - callStartTime < WIAT_FOR_CALL_RESPONSE) { // 5-second timeout for call response
-
-      if (Sim800.ComPort->available()) {
-
-        String response = Sim800.ComPort->readString();
-        if (response.indexOf("OK") != -1) {
-          Serial.println("Call initiated successfully.");
-          callSuccess = true;
-          break;
-        } else if (response.indexOf("ERROR") != -1) {
-          Serial.println("Call failed: ERROR response received.");
-          break;
-        }
-      }
-    }
-
-    if (!callSuccess) {
-      Serial.println("Call failed: No valid response within timeout.");
-      return SIM800_RES_CALL_FAIL; // Define this in your enum
-    }
-    return SIM800_RES_DELIVERY_REPORT_FAIL; // SMS failed, call attempted
-  }
-
-  Sim800.IsSending = false;
-  return deliveryReceived ? SIM800_RES_OK : SIM800_RES_DELIVERY_REPORT_FAIL;
+  return SIM800_RES_OK; // will send later in Run
 }
 
 /**
@@ -380,39 +305,52 @@ static sim800_res_t fCheckForDeliveryReport(void) {
  */
 sim800_res_t fSim800_SMSSendToAll(String message) {
 
-
-  if (Sim800.SavedPhoneNumbers.size() == 0) {
-
+  if(Sim800.SavedPhoneNumbers.size() == 0) {
     Serial.println("No phone numbers in SavedPhoneNumbers");
     return SIM800_RES_PHONENUMBER_NOT_FOUND;
   }
 
-  bool allSent = true;
-
   JsonObject phoneNumbers = Sim800.SavedPhoneNumbers.as<JsonObject>();
-  for (JsonObject::iterator it = phoneNumbers.begin(); it != phoneNumbers.end(); ++it) {
-
-    String phoneNumber = it->key().c_str(); // Get phone number (key)
-    int isAdmin = it->value().as<int>();    // Get isadmin value (0 or 1)
-
-    Serial.printf("Sending SMS to %s (Admin: %d): %s\n", phoneNumber.c_str(), isAdmin, message.c_str());
-
-    sim800_res_t result = fSim800_SMSSend(phoneNumber, message);
-    if (result != SIM800_RES_OK) {
-
-      Serial.printf("Failed to send SMS to %s: %d\n", phoneNumber.c_str(), result);
-      allSent = false;
-
-    } else {
-      Serial.printf("Successfully sent SMS to %s\n", phoneNumber.c_str());
-    }
-
-    // Small delay to prevent overwhelming SIM800 and avoid brownout
-    delay(1000); // Adjust based on SIM800 response time and power stability
-    yield();     // Prevent watchdog timeout
+  for(JsonObject::iterator it = phoneNumbers.begin(); it != phoneNumbers.end(); ++it) {
+    
+    String phoneNumber = it->key().c_str();
+    fEnqueueMsg(phoneNumber, message);
   }
 
-  return allSent ? SIM800_RES_OK : SIM800_RES_SEND_SMS_FAIL;
+  return SIM800_RES_OK; // all queued
+
+  // if (Sim800.SavedPhoneNumbers.size() == 0) {
+
+  //   Serial.println("No phone numbers in SavedPhoneNumbers");
+  //   return SIM800_RES_PHONENUMBER_NOT_FOUND;
+  // }
+
+  // bool allSent = true;
+
+  // JsonObject phoneNumbers = Sim800.SavedPhoneNumbers.as<JsonObject>();
+  // for (JsonObject::iterator it = phoneNumbers.begin(); it != phoneNumbers.end(); ++it) {
+
+  //   String phoneNumber = it->key().c_str(); // Get phone number (key)
+  //   int isAdmin = it->value().as<int>();    // Get isadmin value (0 or 1)
+
+  //   Serial.printf("Sending SMS to %s (Admin: %d): %s\n", phoneNumber.c_str(), isAdmin, message.c_str());
+
+  //   sim800_res_t result = fSim800_SMSSend(phoneNumber, message);
+  //   if (result != SIM800_RES_OK) {
+
+  //     Serial.printf("Failed to send SMS to %s: %d\n", phoneNumber.c_str(), result);
+  //     allSent = false;
+
+  //   } else {
+  //     Serial.printf("Successfully sent SMS to %s\n", phoneNumber.c_str());
+  //   }
+
+  //   // Small delay to prevent overwhelming SIM800 and avoid brownout
+  //   delay(1000); // Adjust based on SIM800 response time and power stability
+  //   yield();     // Prevent watchdog timeout
+  // }
+
+  // return allSent ? SIM800_RES_OK : SIM800_RES_SEND_SMS_FAIL;
 }
 
 /**
@@ -767,6 +705,164 @@ static sim800_res_t fRecivedSms_CheckCommand(void) {
   }
 
   return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param PhoneNumber 
+ * @param Text 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fEnqueueMsg(String PhoneNumber, String Text) {
+
+  if(Sim800.QueueCount >= SIM800_SMS_QUEUE_SIZE) {
+
+      Serial.println("SMS queue full!");
+      return SIM800_RES_ENQUEUE_FAIL;
+    }
+    Sim800.SmsQueue[Sim800.QueueTail].PhoneNumber = PhoneNumber;
+    Sim800.SmsQueue[Sim800.QueueTail].Text = Text;
+    Sim800.QueueTail = (Sim800.QueueTail + 1) % SIM800_SMS_QUEUE_SIZE;
+    Sim800.QueueCount++;
+    Serial.printf("Enqueued SMS to %s. QueueCount=%d\n", PhoneNumber.c_str(), Sim800.QueueCount);
+
+    return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param msg 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fDequeueMsg(sSmsMessage *msg) {
+
+  if(Sim800.QueueCount == 0) {
+    return SIM800_RES_QUEUE_EMPTY;
+  }
+
+   *msg = (Sim800.SmsQueue[Sim800.QueueHead]);
+   Sim800.QueueHead = (Sim800.QueueHead + 1) % SIM800_SMS_QUEUE_SIZE;
+   Sim800.QueueCount--;
+
+   Serial.printf("Message dequeued: phone num:%s , text: %s\n", msg->PhoneNumber, msg->Text);
+  
+  return SIM800_RES_OK;
+}
+
+/**
+ * @brief 
+ * 
+ * @param PhoneNumber 
+ * @param Text 
+ * @return sim800_res_t 
+ */
+static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
+
+  int retryCount = 0;
+  bool deliveryReceived = false;
+
+  Serial.print("Sending sms to ");Serial.println(PhoneNumber);
+
+  unsigned long startTime = millis();
+  while(Sim800.IsSending && (millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND)){};
+  if(Sim800.IsSending) {
+    return SIM800_RES_SEND_SMS_FAIL;
+  }
+
+  Serial.println("Start sending");
+
+  if(fSendCommand(SET_TEXT_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
+  if(Sim800.EnableDeliveryReport) {
+    if(fSendCommand(DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+      Sim800.IsSending = false;
+      return SIM800_RES_SEND_SMS_FAIL;
+    }
+  }
+
+  String NormalizedPhoneNum;
+  if(fNormalizedPhoneNumber(PhoneNumber, &NormalizedPhoneNum) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
+    return SIM800_RES_PHONENUMBER_INVALID;
+  }
+
+  while(retryCount < SIM800_SEND_SMS_ATTEMPTS && !deliveryReceived) {
+
+    String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
+    if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
+      Sim800.IsSending = false;
+      return SIM800_RES_SEND_COMMAND_FAIL;
+    }
+
+    Sim800.IsSending = true;
+    Sim800.ComPort->print(Text);
+    Sim800.ComPort->write(SEND_SMS_END);
+    delay(100);
+    Sim800.IsSending = false;
+    
+    if(Sim800.EnableDeliveryReport) {
+
+      // Check for delivery report if enabled
+      if(Sim800.EnableDeliveryReport) {
+
+        if(fCheckForDeliveryReport() == SIM800_RES_OK) {
+
+          Serial.println("SMS delivery confirmed.");
+          deliveryReceived = true;
+          break;
+        } else {
+          Serial.println("No delivery report received within timeout.");
+        }
+      } else {
+        deliveryReceived = true; // No delivery report check, assume success
+        break;
+      }
+    }
+  }
+
+    Sim800.IsSending = false;
+
+    if (!deliveryReceived && Sim800.EnableDeliveryReport) {
+
+    Serial.println("All SMS retries failed. Initiating call to " + PhoneNumber);
+    String phonenumber_call = "+98" + PhoneNumber.substring(1); // Adjust phone number format
+    String phonenumber_str = "ATD" + phonenumber_call + ";";
+    Sim800.ComPort->println(phonenumber_str.c_str());
+
+    // Wait for call response (e.g., OK or ERROR)
+    unsigned long callStartTime = millis();
+    bool callSuccess = false;
+
+    while (millis() - callStartTime < WIAT_FOR_CALL_RESPONSE) { // 5-second timeout for call response
+
+      if (Sim800.ComPort->available()) {
+
+        String response = Sim800.ComPort->readString();
+        if (response.indexOf("OK") != -1) {
+          Serial.println("Call initiated successfully.");
+          callSuccess = true;
+          break;
+        } else if (response.indexOf("ERROR") != -1) {
+          Serial.println("Call failed: ERROR response received.");
+          break;
+        }
+      }
+    }
+
+    if (!callSuccess) {
+      Serial.println("Call failed: No valid response within timeout.");
+      return SIM800_RES_CALL_FAIL; // Define this in your enum
+    }
+    return SIM800_RES_DELIVERY_REPORT_FAIL; // SMS failed, call attempted
+  }
+
+  Sim800.IsSending = false;
+  return deliveryReceived ? SIM800_RES_OK : SIM800_RES_DELIVERY_REPORT_FAIL;
 }
 
 /**End of Group_Name
