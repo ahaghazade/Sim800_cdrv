@@ -286,12 +286,14 @@ static sim800_res_t fCheckForDeliveryReport(void) {
     
     if(Sim800.ComPort->available()) {
 
+      Serial.println("5-----------");
       String incomingData = Sim800.ComPort->readString();
       if (incomingData.indexOf("+CDS:") != -1) {
         Serial.println("delivery report reviceved");
         return SIM800_RES_OK;
       }
     }
+    delay(10);
   }
   return SIM800_RES_DELIVERY_REPORT_FAIL;
 }
@@ -747,7 +749,7 @@ static sim800_res_t fDequeueMsg(sSmsMessage *msg) {
    Sim800.QueueHead = (Sim800.QueueHead + 1) % SIM800_SMS_QUEUE_SIZE;
    Sim800.QueueCount--;
 
-   Serial.printf("Message dequeued: phone num:%s , text: %s\n", msg->PhoneNumber, msg->Text);
+   Serial.printf("Message dequeued: phone num:%s , text: %s\n", msg->PhoneNumber.c_str(), msg->Text.c_str());
   
   return SIM800_RES_OK;
 }
