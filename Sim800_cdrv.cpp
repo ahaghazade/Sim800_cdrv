@@ -497,6 +497,11 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
  */
 static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse) {
 
+  if (Sim800.ComPort == nullptr) {
+    Serial.println("ERROR: ComPort null!");
+    return SIM800_RES_INIT_FAIL;
+  }
+
   bool commandResponsed = false;
   int commandTries = 0;
 

@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /* Exported defines ----------------------------------------------------------*/
-#define WAIT_FOR_COMMAND_RESPONSE_MS            3000
+#define WAIT_FOR_COMMAND_RESPONSE_MS            5000
 #define WAIT_FOR_SIM800_READY_SEND_COMMAND      5000
 #define SIM800_COMMAND_ATTEMPTS                 3
 #define WAIT_FOR_SIM800_SEND_SMS_DELIVERY       10000
