@@ -169,6 +169,7 @@ void fSim800_Run(void) {
         state = SMS_IDLE;
       }
     }
+    vTaskDelay(1);
   }
 
   // Delete after finishing loop
@@ -293,7 +294,7 @@ static sim800_res_t fCheckForDeliveryReport(void) {
         return SIM800_RES_OK;
       }
     }
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
   return SIM800_RES_DELIVERY_REPORT_FAIL;
 }
@@ -751,6 +752,10 @@ static sim800_res_t fDequeueMsg(sSmsMessage *msg) {
   }
 
    *msg = (Sim800.SmsQueue[Sim800.QueueHead]);
+   if(msg == NULL) {
+    return SIM800_RES_QUEUE_EMPTY;
+   }
+   
    Sim800.QueueHead = (Sim800.QueueHead + 1) % SIM800_SMS_QUEUE_SIZE;
    Sim800.QueueCount--;
 
