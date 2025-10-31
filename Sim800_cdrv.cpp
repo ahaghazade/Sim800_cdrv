@@ -22,6 +22,7 @@
 
 #include <SPIFFS.h>
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
@@ -127,6 +128,7 @@ void fSim800_Run(void) {
 
   while(millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
 
+    esp_task_wdt_reset();
     if(Sim800.ComPort->available() > 0) {
 
       String line = Sim800.ComPort->readStringUntil('\n');
@@ -285,6 +287,7 @@ static sim800_res_t fCheckForDeliveryReport(void) {
 
   while (millis() - startTime < WAIT_FOR_SIM800_SEND_SMS_DELIVERY) {
     
+    esp_task_wdt_reset();
     if(Sim800.ComPort->available()) {
 
       Serial.println("5-----------");
@@ -516,6 +519,7 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
 
   while(!commandResponsed && commandTries < Sim800.CommandSendRetries) {
     
+    esp_task_wdt_reset();
     commandTries++;
     Sim800.IsSending = true;
     
@@ -526,7 +530,10 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
 
     while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
 
+      esp_task_wdt_reset();
       while(Sim800.ComPort->available() > 0) {  
+
+        esp_task_wdt_reset();
 
         String line = Sim800.ComPort->readString();
 
@@ -806,6 +813,8 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
 
   while(retryCount < SIM800_SEND_SMS_ATTEMPTS && !deliveryReceived) {
 
+    esp_task_wdt_reset();
+
     String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
     if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
       Sim800.IsSending = false;
@@ -851,6 +860,7 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
 
     while (millis() - callStartTime < WIAT_FOR_CALL_RESPONSE) { // 5-second timeout for call response
 
+      esp_task_wdt_reset();
       if (Sim800.ComPort->available()) {
 
         String response = Sim800.ComPort->readString();
