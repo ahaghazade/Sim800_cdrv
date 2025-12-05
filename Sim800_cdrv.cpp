@@ -116,6 +116,10 @@ void fSim800_Run(void) {
     return; // only handle one per Run cycle to avoid WDT
   }
 
+  Sim800.IsSending = false;
+}
+
+void fSim800_CheckInbox() {
 
   Serial.println("checking inbox...");
 
@@ -181,10 +185,9 @@ void fSim800_Run(void) {
     String deleteCmd = "AT+CMGD=" + String(pendingDeleteIndex) + ",0";
     fSendCommand(deleteCmd, "OK");
   }
-
+  
   Sim800.IsSending = false;
 }
-
 
 /**
  * @brief 

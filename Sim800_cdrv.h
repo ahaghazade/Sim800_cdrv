@@ -178,6 +178,7 @@ typedef struct {
 /* Exported functions prototypes ---------------------------------------------*/
 sim800_res_t fSim800_Init(void);
 void fSim800_Run(void);
+void fSim800_CheckInbox(void);
 sim800_res_t fSim800_AddPhoneNumber(String PhoneNumber, bool IsAdmin);
 sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber);
 sim800_res_t fSim800_RemoveAllPhoneNumbers(void);
