@@ -109,6 +109,8 @@ typedef struct{
   int index;
   
   String phoneNumber;
+
+  bool IsAdmin;
   
   String dateTime;
 

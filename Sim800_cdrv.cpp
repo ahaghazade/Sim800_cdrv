@@ -642,6 +642,8 @@ static sim800_res_t fRecivedSms_Parse(const String *pLine) {
     return SIM800_RES_PHONENUMBER_INVALID;
   }
 
+  Sim800._args.MassageData.IsAdmin = Sim800.SavedPhoneNumbers[Sim800._args.MassageData.phoneNumber];  
+
   // Extract datetime (last quoted string)
   int lastQuoteOpen = pLine->lastIndexOf('"');
   int lastQuoteClose = pLine->lastIndexOf('"', lastQuoteOpen - 1);
