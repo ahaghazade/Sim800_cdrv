@@ -557,6 +557,9 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
       }
     }
     delay(100);
+    if(!commandResponsed) {
+      fSim800_Init(); //reinit
+    }
   }
 
   Sim800.IsSending = false;
@@ -564,7 +567,7 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
   if(commandResponsed == true) {
     return SIM800_RES_OK;
   } else {
-	return SIM800_RES_SEND_COMMAND_FAIL;
+	  return SIM800_RES_SEND_COMMAND_FAIL;
   }
 }
 
