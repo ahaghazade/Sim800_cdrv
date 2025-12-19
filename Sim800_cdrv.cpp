@@ -558,7 +558,7 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
     }
     delay(100);
     if(!commandResponsed) {
-      fSim800_Init(); //reinit
+      fGSM_Init(); //reinit
     }
   }
 
