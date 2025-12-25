@@ -60,7 +60,7 @@ typedef uint8_t sim800_res_t;
 #define SIM800_RES_SIMCARD_NOT_INSERTED         ((sim800_res_t)9)
 #define SIM800_RES_REVIEVED_SMS_INVALID         ((sim800_res_t)10)
 #define SIM800_RES_DELIVERY_REPORT_FAIL         ((sim800_res_t)11)
-#define SIM800_RES_CALL_FAIL                    ((sim800_res_t)12)
+#define SIM800_RES_CALL_NO_RESPONSE             ((sim800_res_t)12)
 #define SIM800_RES_ENQUEUE_FAIL                 ((sim800_res_t)13)
 #define SIM800_RES_QUEUE_EMPTY                  ((sim800_res_t)14)
 
@@ -186,6 +186,7 @@ sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber);
 sim800_res_t fSim800_RemoveAllPhoneNumbers(void);
 sim800_res_t fSim800_SMSSend(String PhoneNumber, String message);
 sim800_res_t fSim800_SMSSendToAll(String message);
+sim800_res_t fSim800_Call(String PhoneNumber);
 sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance);
 uint32_t fSim800_CheckCredit(void);
 sim800_res_t fSim800_GetPhoneNumbers(JsonDocument *pDoc);
