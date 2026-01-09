@@ -35,7 +35,7 @@ extern "C" {
 
 /* Exported defines ----------------------------------------------------------*/
 #define WAIT_FOR_COMMAND_RESPONSE_MS            5000
-#define WAIT_FOR_SIM800_READY_SEND_COMMAND      5000
+#define WAIT_FOR_SIM800_READY_SEND_COMMAND      2000
 #define SIM800_COMMAND_ATTEMPTS                 3
 #define WAIT_FOR_SIM800_SEND_SMS_DELIVERY       10000
 #define WIAT_FOR_CALL_RESPONSE                  5000
@@ -61,8 +61,9 @@ typedef uint8_t sim800_res_t;
 #define SIM800_RES_REVIEVED_SMS_INVALID         ((sim800_res_t)10)
 #define SIM800_RES_DELIVERY_REPORT_FAIL         ((sim800_res_t)11)
 #define SIM800_RES_CALL_NO_RESPONSE             ((sim800_res_t)12)
-#define SIM800_RES_ENQUEUE_FAIL                 ((sim800_res_t)13)
-#define SIM800_RES_QUEUE_EMPTY                  ((sim800_res_t)14)
+#define SIM800_RES_CALL_INITIAL_FAILD           ((sim800_res_t)13)
+#define SIM800_RES_ENQUEUE_FAIL                 ((sim800_res_t)14)
+#define SIM800_RES_QUEUE_EMPTY                  ((sim800_res_t)15)
 
 /* Exported macro ------------------------------------------------------------*/    
 /* Exported types ------------------------------------------------------------*/
