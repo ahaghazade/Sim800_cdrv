@@ -83,6 +83,8 @@ sim800_res_t fSim800_Init(void) {
   }
 
   if(fGSM_Init() != SIM800_RES_OK) {
+
+    Sim800.IsSending = false;
     return SIM800_RES_INIT_GSM_FAIL;
   }
 
@@ -113,11 +115,13 @@ void fSim800_Run(void) {
 
     } else {
 
-      Serial.printf("Failed to send SMS to %s (err=%d). Re-enqueueing...\n", msg.PhoneNumber.c_str(), result);
+      Serial.printf("Failed to send SMS to %s (err=%d).\n", msg.PhoneNumber.c_str(), result);
       if(Sim800.EnableDeliveryReport) {
 
         Serial.println("All SMS retries failed");
         if(fSim800_Call(msg.PhoneNumber) != SIM800_RES_CALL_INITIAL_FAILD) {
+          
+          Serial.println("ReEnqueue massage...");
           fEnqueueMsg(msg.PhoneNumber, msg.Text);
         }        
       }
@@ -134,6 +138,7 @@ void fSim800_CheckInbox() {
 
   Sim800.IsSending = true;
   Sim800.ComPort->println("AT+CMGL=\"REC UNREAD\"");
+  Sim800.IsSending = false;
 
   unsigned long startTime = millis();
   eSmsState state = SMS_IDLE;
@@ -162,7 +167,7 @@ void fSim800_CheckInbox() {
           state = SMS_IDLE;
         }
 
-      }else if(state == SMS_BODY) {
+      } else if(state == SMS_BODY) {
 
         Serial.println("----------New massage-----------");
         Serial.println(line);
@@ -346,16 +351,15 @@ sim800_res_t fSim800_SMSSendToAll(String message) {
  */
 sim800_res_t fSim800_Call(String phoneNumber) {
 
-  Sim800.IsSending = true;
-
   String PhoneNumber;
   fNormalizedPhoneNumber(phoneNumber, &PhoneNumber);
 
   Serial.println("Initiating call to " + PhoneNumber);
   String phonenumber_call = "+98" + PhoneNumber.substring(1); // Adjust phone number format
-  String phonenumber_str = "ATD" + phonenumber_call + ";";
-  Sim800.ComPort->println(phonenumber_str.c_str());
+  String phonenumber_str = "ATD+ " + phonenumber_call + ";";
 
+  Serial.println(phonenumber_str);
+  fSendCommand(phonenumber_str, ATOK); 
   Sim800.IsSending = false;
 
   // Wait for call response (e.g., OK or ERROR)
@@ -364,20 +368,25 @@ sim800_res_t fSim800_Call(String phoneNumber) {
 
   while (millis() - callStartTime < WIAT_FOR_CALL_RESPONSE) { // 5-second timeout for call response
 
-    delay(10);
     esp_task_wdt_reset();
     if (Sim800.ComPort->available()) {
 
       String response = Sim800.ComPort->readString();
-      if (response.indexOf("OK") != -1) {
+      printf("call requests response: %s\n", response);
+
+      if(response.indexOf("OK") != -1) {
 
         Serial.println("Call initiated successfully.");
         callSuccess = true;
         break;
 
-      } else if (response.indexOf("ERROR") != -1) {
+      } else if(response.indexOf("ERROR") != -1) {
 
         Serial.println("Call failed: ERROR response received.");
+        
+      } else if(response.indexOf("NO RESPONSE") != -1) {
+
+        Serial.println("Call failed: No response");
       }
     }
   }
@@ -532,6 +541,7 @@ static sim800_res_t fNormalizedPhoneNumber(String PhoneNumber, String *Normalize
  */
 static sim800_res_t fSendCommand(String Command, String DesiredResponse, String *pResponse) {
 
+  Serial.printf("sending command: %s\n", Command.c_str());
   if (Sim800.ComPort == nullptr) {
     Serial.println("ERROR: ComPort null!");
     return SIM800_RES_INIT_FAIL;
@@ -545,6 +555,8 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
   while(Sim800.IsSending && millis() - startTime < WAIT_FOR_SIM800_READY_SEND_COMMAND){};
   
   if(Sim800.IsSending) {
+
+    Serial.println("Failed to send command: device is sending...");
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
@@ -585,9 +597,12 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
       }
     }
     delay(10);
-    if(!commandResponsed) {
-      fGSM_Init(); //reinit
-    }
+
+    // if(!commandResponsed) {
+
+    //   Sim800.IsSending = false;
+    //   fGSM_Init(); //reinit
+    // }
   }
 
   Sim800.IsSending = false;
@@ -853,7 +868,7 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
     String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
     if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
       Sim800.IsSending = false;
-      return SIM800_RES_SEND_COMMAND_FAIL;
+      continue;
     }
 
     Sim800.IsSending = true;
@@ -887,12 +902,10 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
   Serial.printf("sending while finished with delivery status %d\n", deliveryReceived);
 
   Sim800.IsSending = false;
-
-  Sim800.IsSending = false;
   return deliveryReceived ? SIM800_RES_OK : SIM800_RES_DELIVERY_REPORT_FAIL;
 }
 
 /**End of Group_Name
   * @}
   */
-/************************ © COPYRIGHT DideGroup *****END OF FILE****/
+/************************ © COPYRIGHT DiodeGroup *****END OF FILE****/
