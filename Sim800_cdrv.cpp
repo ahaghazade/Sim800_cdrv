@@ -270,6 +270,7 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(void) {
   }
 
   Sim800.SavedPhoneNumbers.clear();
+  fSavePhoneNumbers(SavedPhoneNumbersPath);
 
   return SIM800_RES_OK;
 }
