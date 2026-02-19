@@ -49,6 +49,7 @@ static sim800_res_t fCheckForDeliveryReport(void);
 static sim800_res_t fEnqueueMsg(String PhoneNumber, String Text);
 static sim800_res_t fDequeueMsg(sSmsMessage *msg);
 static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text);
+static String fTextToHex(String text);
 
 /* Variables -----------------------------------------------------------------*/
 sSim800 Sim800;
@@ -278,25 +279,6 @@ sim800_res_t fSim800_RemoveAllPhoneNumbers(void) {
 /**
  * @brief 
  * 
- * @param me 
- * @param PhoneNumber 
- * @param Text 
- * @return sim800_res_t 
- */
-sim800_res_t fSim800_SMSSend(String PhoneNumber, String Text) {
-
-  if(!Sim800.Init) return SIM800_RES_INIT_FAIL;
-
-  if(!fEnqueueMsg(PhoneNumber, Text)) {
-    return SIM800_RES_ENQUEUE_FAIL;
-  }
-
-  return SIM800_RES_OK; // will send later in Run
-}
-
-/**
- * @brief 
- * 
  * @return sim800_res_t 
  */
 static sim800_res_t fCheckForDeliveryReport(void) {
@@ -318,6 +300,26 @@ static sim800_res_t fCheckForDeliveryReport(void) {
     vTaskDelay(pdMS_TO_TICKS(50));
   }
   return SIM800_RES_DELIVERY_REPORT_FAIL;
+}
+
+/**
+ * @brief 
+ * 
+ * @param phoneNumber 
+ * @param message 
+ * @return sim800_res_t 
+ */
+sim800_res_t fSim800_SMSSend(String phoneNumber, String message) {
+
+  if(!Sim800.Init) return SIM800_RES_INIT_FAIL;
+
+  message = fTextToHex(message);    
+
+  if(!fEnqueueMsg(phoneNumber, message)) {
+    return SIM800_RES_ENQUEUE_FAIL;
+  }
+
+  return SIM800_RES_OK; // will send later in Run
 }
 
 /**
@@ -572,7 +574,7 @@ static sim800_res_t fSendCommand(String Command, String DesiredResponse, String 
     Sim800.ComPort->println(Command);
     unsigned long startTime = millis();
 
-    while(!commandResponsed && millis() - startTime < WAIT_FOR_COMMAND_RESPONSE_MS) {
+    while(!commandResponsed && ((millis() - startTime) < WAIT_FOR_COMMAND_RESPONSE_MS)) {
 
       esp_task_wdt_reset();
       while(Sim800.ComPort->available() > 0) {  
@@ -635,10 +637,10 @@ static sim800_res_t fGSM_Init(void) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
-    Sim800.IsSending = false;
-    return SIM800_RES_SEND_COMMAND_FAIL;
-  }
+  // if(fSendCommand(IRANCELL, ATOK) != SIM800_RES_OK) {
+  //   Sim800.IsSending = false;
+  //   return SIM800_RES_SEND_COMMAND_FAIL;
+  // }
   if(fSendCommand(DELETE_ALL_MSGS, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
@@ -647,12 +649,16 @@ static sim800_res_t fGSM_Init(void) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
-  if(fSendCommand(SET_TEXT_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+  if(fSendCommand(SET_TEXT_HEX_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+  if(fSendCommand(SET_TEXT_HEX_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
     Sim800.IsSending = false;
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
   if(Sim800.EnableDeliveryReport) {
-    if(fSendCommand( DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
+    if(fSendCommand(DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       Sim800.IsSending = false;
       return SIM800_RES_SEND_SMS_FAIL;
     }
@@ -849,6 +855,16 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
     return SIM800_RES_SEND_COMMAND_FAIL;
   }
 
+  if(fSendCommand(SET_TEXT_HEX_MODE, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
+  if(fSendCommand(SET_TEXT_HEX_MODE_CONFIG, ATOK) != SIM800_RES_OK) {
+    Sim800.IsSending = false;
+    return SIM800_RES_SEND_COMMAND_FAIL;
+  }
+
   if(Sim800.EnableDeliveryReport) {
     if(fSendCommand(DELIVERY_ENABLE, ATOK) != SIM800_RES_OK) {
       Sim800.IsSending = false;
@@ -868,7 +884,9 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
 
     String TargetPhoneNumber = String(SET_PHONE_NUM) + "+98" + NormalizedPhoneNum.substring(1) + "\"";
     if(fSendCommand(TargetPhoneNumber, SEND_SMS_START) != SIM800_RES_OK) {
+
       Sim800.IsSending = false;
+      retryCount++;
       continue;
     }
 
@@ -904,6 +922,57 @@ static sim800_res_t fSim800_SMSSend_Immediate(String PhoneNumber, String Text) {
 
   Sim800.IsSending = false;
   return deliveryReceived ? SIM800_RES_OK : SIM800_RES_DELIVERY_REPORT_FAIL;
+}
+
+/**
+ * @brief Function to convert Persian string to UCS2 HEX format
+ * 
+ * @param text 
+ * @return String 
+ */
+static String fTextToHex(String text) {
+
+  String output = "";
+  int len = text.length();
+
+  for (int i = 0; i < len; ) {
+
+    uint32_t codepoint = 0;
+    uint8_t c = text[i];
+
+    // 1-byte UTF-8 (ASCII)
+    if (c < 0x80) {
+
+      codepoint = c;
+      i += 1;
+    }
+    // 2-byte UTF-8
+    else if ((c & 0xE0) == 0xC0) {
+
+      codepoint = ((c & 0x1F) << 6) |
+        (text[i+1] & 0x3F);
+      i += 2;
+    }
+    // 3-byte UTF-8 (Persian chars are here)
+    else if ((c & 0xF0) == 0xE0) {
+
+      codepoint = ((c & 0x0F) << 12) |
+        ((text[i+1] & 0x3F) << 6) |
+        (text[i+2] & 0x3F);
+      i += 3;
+
+    } else {
+      i++; // skip unsupported
+      continue;
+    }
+
+    // Convert to UTF-16BE hex
+    char buffer[5];
+    sprintf(buffer, "%04X", codepoint);
+    output += buffer;
+  }
+
+  return output;
 }
 
 /**End of Group_Name

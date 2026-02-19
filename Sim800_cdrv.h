@@ -185,7 +185,7 @@ void fSim800_CheckInbox(void);
 sim800_res_t fSim800_AddPhoneNumber(String PhoneNumber, bool IsAdmin);
 sim800_res_t fSim800_RemovePhoneNumber(String PhoneNumber);
 sim800_res_t fSim800_RemoveAllPhoneNumbers(void);
-sim800_res_t fSim800_SMSSend(String PhoneNumber, String message);
+sim800_res_t fSim800_SMSSend(String phoneNumber, String message);
 sim800_res_t fSim800_SMSSendToAll(String message);
 sim800_res_t fSim800_Call(String PhoneNumber);
 sim800_res_t fSim800_GetSimcardBalance(uint16_t *pBalance);
